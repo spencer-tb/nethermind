@@ -130,28 +130,27 @@ namespace Nethermind.Synchronization.FastSync
             }
 
             if (_logger.IsTrace) _logger.Trace($"Removing pending request {batch}");
+            if (!_pendingRequests.TryRemove(batch, out _))
+            {
+                if (_logger.IsDebug) _logger.Debug($"Cannot remove pending request {batch}");
+                return SyncResponseHandlingResult.OK;
+            }
+
+            int requestLength = batch.RequestedNodes?.Length ?? 0;
+            int responseLength = batch.Responses?.Length ?? 0;
+
+            void AddAgainAllItems()
+            {
+                for (int i = 0; i < requestLength; i++)
+                {
+                    AddNodeToPending(batch.RequestedNodes![i], null, "missing", true);
+                }
+            }
 
             try
             {
                 lock (_handleWatch)
                 {
-                    if (!_pendingRequests.TryRemove(batch, out _))
-                    {
-                        if (_logger.IsDebug) _logger.Debug($"Cannot remove pending request {batch}");
-                        return SyncResponseHandlingResult.OK;
-                    }
-
-                    int requestLength = batch.RequestedNodes?.Length ?? 0;
-                    int responseLength = batch.Responses?.Length ?? 0;
-
-                    void AddAgainAllItems()
-                    {
-                        for (int i = 0; i < requestLength; i++)
-                        {
-                            AddNodeToPending(batch.RequestedNodes![i], null, "missing", true);
-                        }
-                    }
-
                     if (DateTime.UtcNow - _lastReview > TimeSpan.FromSeconds(60))
                     {
                         _lastReview = DateTime.UtcNow;
@@ -371,66 +370,63 @@ namespace Nethermind.Synchronization.FastSync
 
         public void ResetStateRoot(long blockNumber, Keccak stateRoot, SyncFeedState currentState)
         {
-            lock (_handleWatch)
+            if (currentState != SyncFeedState.Dormant)
             {
-                if (currentState != SyncFeedState.Dormant)
+                throw new InvalidOperationException("Cannot reset state sync on an active feed");
+            }
+
+            Interlocked.Exchange(ref _hintsToResetRoot, 0);
+
+            if (_logger.IsInfo) _logger.Info($"Setting state sync state root to {blockNumber} {stateRoot}");
+            _currentSyncStart = DateTime.UtcNow;
+            _currentSyncStartSecondsInSync = _data.SecondsInSync;
+
+            _data.LastReportTime = (DateTime.UtcNow, DateTime.UtcNow);
+            _data.LastSavedNodesCount = _data.SavedNodesCount;
+            _data.LastRequestedNodesCount = _data.RequestedNodesCount;
+            if (_rootNode != stateRoot)
+            {
+                _branchProgress = new BranchProgress(blockNumber, _logger);
+                _blockNumber = blockNumber;
+                _rootNode = stateRoot;
+                lock (_dependencies) _dependencies.Clear();
+                lock (_codesSameAsNodes) _codesSameAsNodes.Clear();
+
+                if (_logger.IsDebug) _logger.Debug($"Clearing node stacks ({_pendingItems.Description})");
+                _pendingItems.Clear();
+                Interlocked.Exchange(ref _rootSaved, 0);
+            }
+            else
+            {
+                foreach ((StateSyncBatch pendingRequest, _) in _pendingRequests)
                 {
-                    throw new InvalidOperationException("Cannot reset state sync on an active feed");
-                }
-
-                Interlocked.Exchange(ref _hintsToResetRoot, 0);
-
-                if (_logger.IsInfo) _logger.Info($"Setting state sync state root to {blockNumber} {stateRoot}");
-                _currentSyncStart = DateTime.UtcNow;
-                _currentSyncStartSecondsInSync = _data.SecondsInSync;
-
-                _data.LastReportTime = (DateTime.UtcNow, DateTime.UtcNow);
-                _data.LastSavedNodesCount = _data.SavedNodesCount;
-                _data.LastRequestedNodesCount = _data.RequestedNodesCount;
-                if (_rootNode != stateRoot)
-                {
-                    _branchProgress = new BranchProgress(blockNumber, _logger);
-                    _blockNumber = blockNumber;
-                    _rootNode = stateRoot;
-                    lock (_dependencies) _dependencies.Clear();
-                    lock (_codesSameAsNodes) _codesSameAsNodes.Clear();
-
-                    if (_logger.IsDebug) _logger.Debug($"Clearing node stacks ({_pendingItems.Description})");
-                    _pendingItems.Clear();
-                    Interlocked.Exchange(ref _rootSaved, 0);
-                }
-                else
-                {
-                    foreach ((StateSyncBatch pendingRequest, _) in _pendingRequests)
+                    // re-add the pending request
+                    for (int i = 0; i < pendingRequest.RequestedNodes.Length; i++)
                     {
-                        // re-add the pending request
-                        for (int i = 0; i < pendingRequest.RequestedNodes.Length; i++)
-                        {
-                            AddNodeToPending(pendingRequest.RequestedNodes[i], null, "pending request", true);
-                        }
+                        AddNodeToPending(pendingRequest.RequestedNodes[i], null, "pending request", true);
+                    }
+                }
+            }
+
+            _pendingRequests.Clear();
+
+            bool hasOnlyRootNode = false;
+
+            if (_rootNode != Keccak.EmptyTreeHash)
+            {
+                if (_pendingItems.Count == 1)
+                {
+                    // state root can only be located on state stream
+                    StateSyncItem? potentialRoot = _pendingItems.PeekState();
+                    if (potentialRoot?.Hash == _rootNode)
+                    {
+                        hasOnlyRootNode = true;
                     }
                 }
 
-                _pendingRequests.Clear();
-
-                bool hasOnlyRootNode = false;
-
-                if (_rootNode != Keccak.EmptyTreeHash)
+                if (!hasOnlyRootNode)
                 {
-                    if (_pendingItems.Count == 1)
-                    {
-                        // state root can only be located on state stream
-                        StateSyncItem? potentialRoot = _pendingItems.PeekState();
-                        if (potentialRoot?.Hash == _rootNode)
-                        {
-                            hasOnlyRootNode = true;
-                        }
-                    }
-
-                    if (!hasOnlyRootNode)
-                    {
-                        AddNodeToPending(new StateSyncItem(_rootNode, null, null, NodeDataType.State), null, "initial");
-                    }
+                    AddNodeToPending(new StateSyncItem(_rootNode, null, null, NodeDataType.State), null, "initial");
                 }
             }
         }
