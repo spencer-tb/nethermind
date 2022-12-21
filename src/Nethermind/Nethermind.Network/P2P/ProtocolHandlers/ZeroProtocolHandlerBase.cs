@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using DotNetty.Common.Utilities;
 using Nethermind.Logging;
-using Nethermind.Network.P2P.Messages;
 using Nethermind.Network.Rlpx;
 using Nethermind.Stats;
 
@@ -45,17 +44,6 @@ namespace Nethermind.Network.P2P.ProtocolHandlers
             Request<TRequest, TResponse> request = new(message);
             messageQueue.Send(request);
 
-            return await HandleResponse(request, speedType, describeRequestFunc, token);
-        }
-
-        protected async Task<TResponse> HandleResponse<TRequest, TResponse>(
-            Request<TRequest, TResponse> request,
-            TransferSpeedType speedType,
-            Func<TRequest, string> describeRequestFunc,
-            CancellationToken token
-        )
-            where TRequest : MessageBase
-        {
             Task<TResponse> task = request.CompletionSource.Task;
             using CancellationTokenSource delayCancellation = new();
             using CancellationTokenSource compositeCancellation =
@@ -78,7 +66,8 @@ namespace Nethermind.Network.P2P.ProtocolHandlers
             }
 
             StatsManager.ReportTransferSpeedEvent(Session.Node, speedType, 0L);
-            throw new TimeoutException($"{Session} Request timeout in {describeRequestFunc(request.Message)}");
+            throw new TimeoutException($"{Session} Request timeout in {describeRequestFunc(message)}");
         }
+
     }
 }
