@@ -49,7 +49,6 @@ namespace Nethermind.Core.Test.Builders
         public static byte[] RandomDataA = { 1, 2, 3 };
         public static byte[] RandomDataB = { 4, 5, 6, 7 };
         public static byte[] RandomDataC = { 1, 2, 8, 9, 10 };
-        public static byte[] RandomDataD = { 1, 2, 8, 9, 10, 17 };
 
         public static Keccak KeccakA = Keccak.Compute("A");
         public static Keccak KeccakB = Keccak.Compute("B");

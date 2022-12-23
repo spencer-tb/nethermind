@@ -110,13 +110,10 @@ namespace Nethermind.Synchronization.Test.FastSync
 
             items.RecalculatePriorities();
             List<StateSyncItem> batch = items.TakeBatch(256);
-            items.Count.Should().Be(2);
-            batch[0].NodeDataType.Should().Be(NodeDataType.Code);
-
-            batch = items.TakeBatch(256);
             items.Count.Should().Be(0);
-            batch[0].NodeDataType.Should().Be(NodeDataType.Storage);
-            batch[1].NodeDataType.Should().Be(NodeDataType.State);
+            batch[0].NodeDataType.Should().Be(NodeDataType.Code);
+            batch[1].NodeDataType.Should().Be(NodeDataType.Storage);
+            batch[2].NodeDataType.Should().Be(NodeDataType.State);
         }
 
         [Test]

@@ -21,7 +21,7 @@ namespace Nethermind.Network.Test.P2P.Subprotocols.Snap.Messages
             {
                 RequestId = MessageConstants.Random.NextLong(),
                 RootHash = TestItem.KeccakA,
-                Paths = Array.Empty<PathGroup>(),
+                Paths = Array.Empty<PathGroup>(), //new MeasuredArray<MeasuredArray<byte[]>>(<MeasuredArray<byte[]>>()) ,
                 Bytes = 10
             };
             GetTrieNodesMessageSerializer serializer = new();
@@ -58,26 +58,6 @@ namespace Nethermind.Network.Test.P2P.Subprotocols.Snap.Messages
                     {
                         new PathGroup(){Group = new []{TestItem.RandomDataA, TestItem.RandomDataB}},
                         new PathGroup(){Group = new []{TestItem.RandomDataC}}
-                    },
-                Bytes = 10
-            };
-            GetTrieNodesMessageSerializer serializer = new();
-
-            SerializerTester.TestZero(serializer, msg);
-        }
-
-        [Test]
-        public void Roundtrip_MultiplePaths02()
-        {
-            GetTrieNodesMessage msg = new()
-            {
-                RequestId = MessageConstants.Random.NextLong(),
-                RootHash = TestItem.KeccakA,
-                Paths = new PathGroup[]
-                    {
-                        new PathGroup(){Group = new []{TestItem.RandomDataA, TestItem.RandomDataB, TestItem.RandomDataD}},
-                        new PathGroup(){Group = new []{TestItem.RandomDataC}},
-                        new PathGroup(){Group = new []{TestItem.RandomDataC, TestItem.RandomDataA, TestItem.RandomDataB, TestItem.RandomDataD}}
                     },
                 Bytes = 10
             };
