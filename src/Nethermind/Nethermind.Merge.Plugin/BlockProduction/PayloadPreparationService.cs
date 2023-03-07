@@ -6,6 +6,7 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Nethermind.Consensus.Producers;
 using Nethermind.Core;
@@ -29,7 +30,6 @@ namespace Nethermind.Merge.Plugin.BlockProduction
         private readonly PostMergeBlockProducer _blockProducer;
         private readonly IBlockImprovementContextFactory _blockImprovementContextFactory;
         private readonly ILogger _logger;
-        private readonly List<string> _payloadsToRemove = new();
 
         // by default we will cleanup the old payload once per six slot. There is no need to fire it more often
         public const int SlotsPerOldPayloadCleanup = 6;
@@ -52,6 +52,7 @@ namespace Nethermind.Merge.Plugin.BlockProduction
 
         // first ExecutionPayloadV1 is empty (without txs), second one is the ideal one
         private readonly ConcurrentDictionary<string, IBlockImprovementContext> _payloadStorage = new();
+        private IBlockImprovementContext? _currentBuildingContext;
 
         public PayloadPreparationService(
             PostMergeBlockProducer blockProducer,
@@ -99,8 +100,12 @@ namespace Nethermind.Merge.Plugin.BlockProduction
         }
 
         private void ImproveBlock(string payloadId, BlockHeader parentHeader, PayloadAttributes payloadAttributes, Block currentBestBlock, DateTimeOffset startDateTime) =>
-            _payloadStorage.AddOrUpdate(payloadId,
-                id => CreateBlockImprovementContext(id, parentHeader, payloadAttributes, currentBestBlock, startDateTime),
+            _currentBuildingContext = _payloadStorage.AddOrUpdate(payloadId,
+                id =>
+                {
+                    _currentBuildingContext?.Dispose();
+                    return CreateBlockImprovementContext(id, parentHeader, payloadAttributes, currentBestBlock, startDateTime);
+                },
                 (id, currentContext) =>
                 {
                     // if there is payload improvement and its not yet finished leave it be
@@ -110,18 +115,19 @@ namespace Nethermind.Merge.Plugin.BlockProduction
                         return currentContext;
                     }
 
-                    IBlockImprovementContext newContext = CreateBlockImprovementContext(id, parentHeader, payloadAttributes, currentBestBlock, startDateTime);
                     currentContext.Dispose();
-                    return newContext;
+                    _currentBuildingContext?.Dispose();
+
+                    return CreateBlockImprovementContext(id, parentHeader, payloadAttributes, currentBestBlock, startDateTime);
                 });
 
 
         private IBlockImprovementContext CreateBlockImprovementContext(string payloadId, BlockHeader parentHeader, PayloadAttributes payloadAttributes, Block currentBestBlock, DateTimeOffset startDateTime)
         {
             if (_logger.IsTrace) _logger.Trace($"Start improving block from payload {payloadId} with parent {parentHeader.ToString(BlockHeader.Format.FullHashAndNumber)}");
-            IBlockImprovementContext blockImprovementContext = _blockImprovementContextFactory.StartBlockImprovementContext(currentBestBlock, parentHeader, payloadAttributes, startDateTime);
+            IBlockImprovementContext blockImprovementContext = _currentBuildingContext = _blockImprovementContextFactory.StartBlockImprovementContext(currentBestBlock, parentHeader, payloadAttributes, startDateTime);
             blockImprovementContext.ImprovementTask.ContinueWith(LogProductionResult);
-            blockImprovementContext.ImprovementTask.ContinueWith(async _ =>
+            blockImprovementContext.ImprovementTask.ContinueWith(async t =>
             {
                 // if after delay we still have time to try producing the block in this slot
                 DateTimeOffset whenWeCouldFinishNextProduction = DateTimeOffset.UtcNow + _improvementDelay + _minTimeForProduction;
@@ -130,10 +136,14 @@ namespace Nethermind.Merge.Plugin.BlockProduction
                 {
                     if (_logger.IsTrace) _logger.Trace($"Block for payload {payloadId} with parent {parentHeader.ToString(BlockHeader.Format.FullHashAndNumber)} will be improved in {_improvementDelay.TotalMilliseconds}ms");
                     await Task.Delay(_improvementDelay);
-                    if (!blockImprovementContext.Disposed) // if GetPayload wasn't called for this item or it wasn't cleared
+                    if (!blockImprovementContext.Disposed && t.IsCompletedSuccessfully) // if GetPayload wasn't called for this item or it wasn't cleared
                     {
                         Block newBestBlock = blockImprovementContext.CurrentBestBlock ?? currentBestBlock;
                         ImproveBlock(payloadId, parentHeader, payloadAttributes, newBestBlock, startDateTime);
+                    }
+                    else if (t.IsFaulted)
+                    {
+                        if (_logger.IsTrace) _logger.Trace($"Block for payload {payloadId} with parent {parentHeader.ToString(BlockHeader.Format.FullHashAndNumber)} won't be improved as improvement failed");
                     }
                     else
                     {
@@ -158,20 +168,14 @@ namespace Nethermind.Merge.Plugin.BlockProduction
                 if (payload.Value.StartDateTime + _cleanupOldPayloadDelay <= now)
                 {
                     if (_logger.IsDebug) _logger.Info($"A new payload to remove: {payload.Key}, Current time {now:t}, Payload timestamp: {payload.Value.CurrentBestBlock?.Timestamp}");
-                    _payloadsToRemove.Add(payload.Key);
+                    if (_payloadStorage.TryRemove(payload.Key, out IBlockImprovementContext? context))
+                    {
+                        context.Dispose();
+                        if (_logger.IsDebug) _logger.Info($"Cleaned up payload with id={payload.Key} as it was not requested");
+                    }
                 }
             }
 
-            foreach (string payloadToRemove in _payloadsToRemove)
-            {
-                if (_payloadStorage.TryRemove(payloadToRemove, out IBlockImprovementContext? context))
-                {
-                    context.Dispose();
-                    if (_logger.IsDebug) _logger.Info($"Cleaned up payload with id={payloadToRemove} as it was not requested");
-                }
-            }
-
-            _payloadsToRemove.Clear();
             if (_logger.IsTrace) _logger.Trace($"Finished old payloads cleanup");
         }
 
