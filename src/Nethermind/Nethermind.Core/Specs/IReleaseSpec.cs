@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022 Demerzel Solutions Limited
+// SPDX-FileCopyrightText: 2023 Demerzel Solutions Limited
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using Nethermind.Int256;
@@ -266,6 +266,12 @@ namespace Nethermind.Core.Specs
         /// Should transactions be validated against chainId.
         /// </summary>
         /// <remarks>Backward compatibility for early Kovan blocks.</remarks>
+        bool IsEip4788Enabled { get; }
+
+        /// <summary>
+        /// Should transactions be validated against chainId.
+        /// </summary>
+        /// <remarks>Backward compatibility for early Kovan blocks.</remarks>
         bool ValidateChainId => true;
 
         public ulong WithdrawalTimestamp { get; }
@@ -340,5 +346,7 @@ namespace Nethermind.Core.Specs
         public bool TransientStorageEnabled => IsEip1153Enabled;
 
         public bool WithdrawalsEnabled => IsEip4895Enabled;
+
+        public bool BeaconStateRootAvailable => IsEip4788Enabled;
     }
 }

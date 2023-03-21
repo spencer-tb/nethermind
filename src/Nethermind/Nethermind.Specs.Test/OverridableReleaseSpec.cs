@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022 Demerzel Solutions Limited
+// SPDX-FileCopyrightText: 2023 Demerzel Solutions Limited
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using Nethermind.Core;
@@ -137,14 +137,8 @@ namespace Nethermind.Specs.Test
         private ulong? _overridenEip4844TransitionTimeStamp;
         public ulong Eip4844TransitionTimestamp
         {
-            get
-            {
-                return _overridenEip4844TransitionTimeStamp ?? _spec.Eip4844TransitionTimestamp;
-            }
-            set
-            {
-                _overridenEip4844TransitionTimeStamp = value;
-            }
+            get => _overridenEip4844TransitionTimeStamp ?? _spec.Eip4844TransitionTimestamp;
+            set => _overridenEip4844TransitionTimeStamp = value;
         }
 
         public bool IsEip1153Enabled => _spec.IsEip1153Enabled;
@@ -153,5 +147,12 @@ namespace Nethermind.Specs.Test
         public bool IsEip3860Enabled => _spec.IsEip3860Enabled;
         public bool IsEip4895Enabled => _spec.IsEip4895Enabled;
         public ulong WithdrawalTimestamp => _spec.WithdrawalTimestamp;
+
+        private bool? _overridenIsEip4788Enabled;
+        public bool IsEip4788Enabled
+        {
+            get => _overridenIsEip4788Enabled ?? _spec.IsEip4788Enabled;
+            set => _overridenIsEip4788Enabled = value;
+        }
     }
 }
