@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022 Demerzel Solutions Limited
+// SPDX-FileCopyrightText: 2023 Demerzel Solutions Limited
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using System;
@@ -12,11 +12,11 @@ using Nethermind.Core.Crypto;
 using Nethermind.Core.Extensions;
 using Nethermind.Core.Specs;
 using Nethermind.Evm.CodeAnalysis;
-using Nethermind.Int256;
 using Nethermind.Evm.Precompiles;
 using Nethermind.Evm.Precompiles.Bls.Shamatar;
 using Nethermind.Evm.Precompiles.Snarks.Shamatar;
 using Nethermind.Evm.Tracing;
+using Nethermind.Int256;
 using Nethermind.Logging;
 using Nethermind.State;
 
@@ -1633,6 +1633,29 @@ namespace Nethermind.Evm
                             {
                                 UInt256 diff = txCtx.Header.Difficulty;
                                 stack.PushUInt256(in diff);
+                            }
+                            break;
+                        }
+                    case Instruction.BEACON_STATE_ROOT:
+                        {
+                            if (txCtx.Header.IsPostMerge && spec.BeaconStateRootAvailable)
+                            {
+                                if (!UpdateGas(GasCostOf.Base, ref gasAvailable))
+                                {
+                                    EndInstructionTraceError(EvmExceptionType.OutOfGas);
+                                    return CallResult.OutOfGasException;
+                                }
+
+                                stack.PopUInt256(out UInt256 block_number);
+                                Address HISTORY_STORAGE_ADDRESS = Address.FromNumber(UInt256.Parse("0xfffffffffffffffffffffffffffffffffffffffd"));
+                                StorageCell storageCell = new(HISTORY_STORAGE_ADDRESS, block_number);
+                                byte[] beaconStateRootBytes = _storage.Get(storageCell);
+                                stack.PushBytes(beaconStateRootBytes);
+                            }
+                            else
+                            {
+                                EndInstructionTraceError(EvmExceptionType.BadInstruction);
+                                return CallResult.InvalidInstructionException;
                             }
                             break;
                         }

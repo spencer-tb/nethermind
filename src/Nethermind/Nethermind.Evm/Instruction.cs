@@ -1,8 +1,6 @@
-// SPDX-FileCopyrightText: 2022 Demerzel Solutions Limited
+// SPDX-FileCopyrightText: 2023 Demerzel Solutions Limited
 // SPDX-License-Identifier: LGPL-3.0-only
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using FastEnumUtility;
 
@@ -68,6 +66,7 @@ namespace Nethermind.Evm
         SELFBALANCE = 0x47,
         BASEFEE = 0x48,
         DATAHASH = 0x49,
+        BEACON_STATE_ROOT = 0x4A, // Suggested 0x48 but it seems to be already in use
 
         POP = 0x50,
         MLOAD = 0x51,
