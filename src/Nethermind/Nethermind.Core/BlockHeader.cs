@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022 Demerzel Solutions Limited
+// SPDX-FileCopyrightText: 2023 Demerzel Solutions Limited
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using System;
@@ -66,6 +66,7 @@ public class BlockHeader
     public UInt256 BaseFeePerGas { get; set; }
     public Keccak? WithdrawalsRoot { get; set; }
     public UInt256? ExcessDataGas { get; set; }
+    public Keccak? BeaconStateRoot => UnclesHash;
 
     public bool HasBody => (TxRoot is not null && TxRoot != Keccak.EmptyTreeHash)
         || (UnclesHash is not null && UnclesHash != Keccak.OfAnEmptySequenceRlp)
@@ -102,6 +103,10 @@ public class BlockHeader
         if (ExcessDataGas is not null)
         {
             builder.AppendLine($"{indent}ExcessDataGas: {ExcessDataGas}");
+        }
+        if (BeaconStateRoot != Keccak.OfAnEmptySequenceRlp && IsPostMerge)
+        {
+            builder.AppendLine($"{indent}BeaconStateRoot: {BeaconStateRoot}");
         }
         builder.AppendLine($"{indent}IsPostMerge: {IsPostMerge}");
         builder.AppendLine($"{indent}TotalDifficulty: {TotalDifficulty}");

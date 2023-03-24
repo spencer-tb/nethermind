@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022 Demerzel Solutions Limited
+// SPDX-FileCopyrightText: 2023 Demerzel Solutions Limited
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using System.Collections.Generic;
@@ -16,6 +16,8 @@ public class PayloadAttributes
 
     public Keccak PrevRandao { get; set; }
 
+    public Keccak? BeaconStateRoot { get; set; }
+
     public Address SuggestedFeeRecipient { get; set; }
 
     public IList<Withdrawal>? Withdrawals { get; set; }
@@ -32,6 +34,11 @@ public class PayloadAttributes
             .Append($"{nameof(Timestamp)}: {Timestamp}, ")
             .Append($"{nameof(PrevRandao)}: {PrevRandao}, ")
             .Append($"{nameof(SuggestedFeeRecipient)}: {SuggestedFeeRecipient}");
+
+        if (BeaconStateRoot is not null)
+        {
+            sb.Append($"{nameof(BeaconStateRoot)}: {BeaconStateRoot}");
+        }
 
         if (Withdrawals is not null)
         {

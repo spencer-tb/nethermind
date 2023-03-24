@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022 Demerzel Solutions Limited
+// SPDX-FileCopyrightText: 2023 Demerzel Solutions Limited
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using System;
@@ -24,10 +24,11 @@ public class Block
         BlockHeader blockHeader,
         IEnumerable<Transaction> transactions,
         IEnumerable<BlockHeader> uncles,
-        IEnumerable<Withdrawal>? withdrawals = null)
+        IEnumerable<Withdrawal>? withdrawals = null,
+        RlpBase? BeaconStateRoot = null)
     {
         Header = blockHeader;
-        Body = new(transactions.ToArray(), uncles.ToArray(), withdrawals?.ToArray());
+        Body = new(transactions.ToArray(), uncles.ToArray(), withdrawals?.ToArray(), BeaconStateRoot);
     }
 
     public Block(BlockHeader blockHeader) : this(
@@ -105,6 +106,7 @@ public class Block
     public bool IsBodyMissing => Header.HasBody && Body.IsEmpty;
 
     public Keccak? WithdrawalsRoot => Header.WithdrawalsRoot; // do not add setter here
+    public RlpBase? BeaconStateRoot => Body.BeaconStateRoot!; // do not add setter here
 
     public override string ToString() => ToString(Format.Short);
 

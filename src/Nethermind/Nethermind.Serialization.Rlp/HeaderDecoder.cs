@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022 Demerzel Solutions Limited
+// SPDX-FileCopyrightText: 2023 Demerzel Solutions Limited
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using System;
@@ -16,6 +16,7 @@ namespace Nethermind.Serialization.Rlp
         public static long Eip1559TransitionBlock = long.MaxValue;
         public static ulong WithdrawalTimestamp = ulong.MaxValue;
         public static ulong Eip4844TransitionTimestamp = ulong.MaxValue;
+        public static ulong Eip4788TransitionTimestamp = ulong.MaxValue;
 
         public BlockHeader? Decode(ref Rlp.ValueDecoderContext decoderContext,
             RlpBehaviors rlpBehaviors = RlpBehaviors.None)

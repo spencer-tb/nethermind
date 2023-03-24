@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022 Demerzel Solutions Limited
+// SPDX-FileCopyrightText: 2023 Demerzel Solutions Limited
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using System;
@@ -7,6 +7,7 @@ using Nethermind.Core;
 using Nethermind.Core.Crypto;
 using Nethermind.Core.Specs;
 using Nethermind.Logging;
+using Nethermind.Serialization.Rlp;
 using Nethermind.State.Proofs;
 using Nethermind.TxPool;
 
@@ -97,6 +98,9 @@ public class BlockValidator : IBlockValidator
         }
 
         if (!ValidateWithdrawals(block, spec, out _))
+            return false;
+
+        if (spec.BeaconStateRootAvailable && !ValidateBeaconStateRoot(block, out _))
             return false;
 
         return true;
@@ -200,6 +204,13 @@ public class BlockValidator : IBlockValidator
         unclesHash = UnclesHash.Calculate(block);
 
         return block.Header.UnclesHash == unclesHash;
+    }
+
+    public static bool ValidateBeaconStateRoot(Block block, out Keccak beaconRoot)
+    {
+        beaconRoot = Keccak.Compute(Rlp.Encode(block.Body.BeaconStateRoot).Bytes);
+
+        return block.Header.BeaconStateRoot == beaconRoot;
     }
 
     public static bool ValidateWithdrawalsHashMatches(Block block, out Keccak? withdrawalsRoot)

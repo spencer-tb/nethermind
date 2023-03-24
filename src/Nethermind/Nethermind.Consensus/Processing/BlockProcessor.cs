@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022 Demerzel Solutions Limited
+// SPDX-FileCopyrightText: 2023 Demerzel Solutions Limited
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using System;
@@ -18,7 +18,6 @@ using Nethermind.Int256;
 using Nethermind.Logging;
 using Nethermind.Specs.Forks;
 using Nethermind.State;
-using Nethermind.State.Proofs;
 
 namespace Nethermind.Consensus.Processing
 {
@@ -225,6 +224,14 @@ namespace Nethermind.Consensus.Processing
             ProcessingOptions options)
         {
             IReleaseSpec spec = _specProvider.GetSpec(block.Header);
+
+            if (spec.BeaconStateRootAvailable)
+            {
+                Address HISTORY_STORAGE_ADDRESS = Address.FromNumber(UInt256.Parse("0xfffffffffffffffffffffffffffffffffffffffd"));
+                StorageCell storageCell = new(HISTORY_STORAGE_ADDRESS, (UInt256)block.Number);
+                RlpBase beaconStateRootValue = block.BeaconStateRoot ?? throw new InvalidBlockException(block);
+                _storageProvider.Set(storageCell, beaconStateRootValue.Bytes);
+            }
 
             _receiptsTracer.SetOtherTracer(blockTracer);
             _receiptsTracer.StartNewBlockTrace(block);

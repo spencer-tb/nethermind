@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022 Demerzel Solutions Limited
+// SPDX-FileCopyrightText: 2023 Demerzel Solutions Limited
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using System;
@@ -13,6 +13,7 @@ using Nethermind.Serialization.Json;
 using Nethermind.Serialization.Rlp;
 using Nethermind.State.Proofs;
 using Newtonsoft.Json;
+
 
 namespace Nethermind.Merge.Plugin.Data;
 
@@ -40,6 +41,7 @@ public class ExecutionPayload
         BaseFeePerGas = block.BaseFeePerGas;
         Withdrawals = block.Withdrawals;
         ExcessDataGas = block.ExcessDataGas;
+        UnclesHash = block.UnclesHash ?? Keccak.OfAnEmptySequenceRlp;
 
         SetTransactions(block.Transactions);
     }
@@ -85,6 +87,7 @@ public class ExecutionPayload
 
     [JsonConverter(typeof(NullableUInt256Converter))]
     public UInt256? ExcessDataGas { get; set; }
+    public Keccak UnclesHash { get; set; } = Keccak.Zero;
 
     /// <summary>
     /// Creates the execution block from payload.
@@ -99,7 +102,7 @@ public class ExecutionPayload
             var transactions = GetTransactions();
             var header = new BlockHeader(
                 ParentHash,
-                Keccak.OfAnEmptySequenceRlp,
+                UnclesHash,
                 FeeRecipient,
                 UInt256.Zero,
                 BlockNumber,
@@ -120,7 +123,7 @@ public class ExecutionPayload
                 TotalDifficulty = totalDifficulty,
                 TxRoot = new TxTrie(transactions).RootHash,
                 WithdrawalsRoot = Withdrawals is null ? null : new WithdrawalTrie(Withdrawals).RootHash,
-                ExcessDataGas = ExcessDataGas,
+                ExcessDataGas = ExcessDataGas
             };
 
             block = new(header, transactions, Array.Empty<BlockHeader>(), Withdrawals);
