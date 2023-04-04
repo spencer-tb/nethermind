@@ -231,7 +231,7 @@ public partial class BlockProcessor : IBlockProcessor
 
         block.Header.ReceiptsRoot = receipts.GetReceiptsRoot(spec, block.ReceiptsRoot);
         ApplyMinerRewards(block, blockTracer, spec);
-        _withdrawalProcessor.ProcessWithdrawals(block, spec);
+        _withdrawalProcessor.ProcessWithdrawals(block, spec, _receiptsTracer);
         _receiptsTracer.EndBlockTrace();
 
         _stateProvider.Commit(spec);

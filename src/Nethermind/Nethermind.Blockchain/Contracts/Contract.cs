@@ -168,24 +168,27 @@ namespace Nethermind.Blockchain.Contracts
         /// <param name="callAndRestore">Is it restore call.</param>
         /// <returns>Bytes with result.</returns>
         /// <exception cref="AbiException">Thrown when there is an exception during execution or <see cref="CallOutputTracer.StatusCode"/> is <see cref="StatusCode.Failure"/>.</exception>
-        protected byte[] CallCore(ITransactionProcessor transactionProcessor, BlockHeader header, string functionName, Transaction transaction, bool callAndRestore = false)
+        protected byte[] CallCore(ITransactionProcessor transactionProcessor, BlockHeader header, string functionName, Transaction transaction, bool callAndRestore = false, ITxTracer? tracer = null)
         {
             bool failure;
 
-            CallOutputTracer tracer = new();
+            CallOutputTracer outputTracer = new();
+            ITxTracer compositeTracer = tracer is null
+                ? outputTracer
+                : new CompositeTxTracer(new[] { outputTracer, tracer });
 
             try
             {
                 if (callAndRestore)
                 {
-                    transactionProcessor.CallAndRestore(transaction, header, tracer);
+                    transactionProcessor.CallAndRestore(transaction, header, compositeTracer);
                 }
                 else
                 {
-                    transactionProcessor.Execute(transaction, header, tracer);
+                    transactionProcessor.Execute(transaction, header, compositeTracer);
                 }
 
-                failure = tracer.StatusCode != StatusCode.Success;
+                failure = outputTracer.StatusCode != StatusCode.Success;
             }
             catch (Exception e)
             {
@@ -194,11 +197,11 @@ namespace Nethermind.Blockchain.Contracts
 
             if (failure)
             {
-                throw new AbiException($"System call to {AbiDefinition.Name}.{functionName} returned error '{tracer.Error}' at block {header.Number}.");
+                throw new AbiException($"System call to {AbiDefinition.Name}.{functionName} returned error '{outputTracer.Error}' at block {header.Number}.");
             }
             else
             {
-                return tracer.ReturnValue;
+                return outputTracer.ReturnValue;
             }
         }
 

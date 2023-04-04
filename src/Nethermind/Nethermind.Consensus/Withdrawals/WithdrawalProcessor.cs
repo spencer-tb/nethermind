@@ -3,8 +3,10 @@
 
 using System;
 using System.Numerics;
+using Nethermind.Consensus.Tracing;
 using Nethermind.Core;
 using Nethermind.Core.Specs;
+using Nethermind.Evm.Tracing;
 using Nethermind.Int256;
 using Nethermind.Logging;
 using Nethermind.State;
@@ -24,7 +26,7 @@ public class WithdrawalProcessor : IWithdrawalProcessor
         _stateProvider = stateProvider ?? throw new ArgumentNullException(nameof(stateProvider));
     }
 
-    public void ProcessWithdrawals(Block block, IReleaseSpec spec)
+    public void ProcessWithdrawals(Block block, IReleaseSpec spec, ITxTracer _)
     {
         if (!spec.WithdrawalsEnabled)
             return;

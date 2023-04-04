@@ -46,16 +46,18 @@ public class AuraWithdrawalProcessorTests
         Address[] addresses = Array.Empty<Address>();
         contract.ExecuteWithdrawals(
             block.Header,
+            null,
             4,
             Arg.Do<IList<ulong>>(a => values = a.ToArray()),
             Arg.Do<IList<Address>>(a => addresses = a.ToArray()));
 
-        withdrawalProcessor.ProcessWithdrawals(block, spec);
+        withdrawalProcessor.ProcessWithdrawals(block, spec, null);
 
         contract
             .Received(1)
             .ExecuteWithdrawals(
                 Arg.Is(block.Header),
+                null,
                 Arg.Is<UInt256>(4),
                 Arg.Is<IList<ulong>>(a => values.SequenceEqual(new[] { 1_000_000UL, 2_000_000UL })),
                 Arg.Is<IList<Address>>(a => addresses.SequenceEqual(new[] { Address.SystemUser, Address.Zero })));
@@ -72,12 +74,13 @@ public class AuraWithdrawalProcessorTests
 
         spec.WithdrawalsEnabled.Returns(false);
 
-        withdrawalProcessor.ProcessWithdrawals(block, spec);
+        withdrawalProcessor.ProcessWithdrawals(block, spec, null);
 
         contract
             .Received(0)
             .ExecuteWithdrawals(
                 Arg.Any<BlockHeader>(),
+                null,
                 Arg.Any<UInt256>(),
                 Arg.Any<ulong[]>(),
                 Arg.Any<Address[]>());
