@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO.Abstractions;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -150,6 +151,8 @@ namespace Nethermind.Blockchain.Test.FullPruning
             public FullPruner Pruner { get; }
             public MemDb TrieDb { get; }
             public MemDb CopyDb { get; }
+            public IDriveInfo DriveInfo { get; set; } = Substitute.For<IDriveInfo>();
+            public IChainEstimations _chainEstimations = ChainSizes.UnknownChain.Instance;
 
             public TestContext(bool successfulPruning, bool clearPrunedDb = false, int fullScanMemoryBudgetMb = 0, int degreeOfParallelism = 0)
             {
@@ -169,7 +172,7 @@ namespace Nethermind.Blockchain.Test.FullPruning
                 {
                     FullPruningMaxDegreeOfParallelism = degreeOfParallelism,
                     FullPruningMemoryBudgetMb = fullScanMemoryBudgetMb,
-                }, BlockTree, StateReader, LimboLogs.Instance);
+                }, BlockTree, StateReader, _chainEstimations, DriveInfo, LimboLogs.Instance);
             }
 
             public async Task<bool> WaitForPruning()

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using System;
+using System.IO.Abstractions;
 using System.Threading;
 using System.Threading.Tasks;
 using Nethermind.Core;
@@ -26,6 +27,8 @@ namespace Nethermind.Blockchain.FullPruning
         private readonly IBlockTree _blockTree;
         private readonly IStateReader _stateReader;
         private readonly ILogManager _logManager;
+        private readonly IChainEstimations _chainEstimations;
+        private readonly IDriveInfo _driveInfo;
         private IPruningContext? _currentPruning;
         private int _waitingForBlockProcessed = 0;
         private int _waitingForStateReady = 0;
@@ -41,6 +44,8 @@ namespace Nethermind.Blockchain.FullPruning
             IPruningConfig pruningConfig,
             IBlockTree blockTree,
             IStateReader stateReader,
+            IChainEstimations chainEstimations,
+            IDriveInfo driveInfo,
             ILogManager logManager)
         {
             _fullPruningDb = fullPruningDb;
@@ -49,6 +54,8 @@ namespace Nethermind.Blockchain.FullPruning
             _blockTree = blockTree;
             _stateReader = stateReader;
             _logManager = logManager;
+            _chainEstimations = chainEstimations;
+            _driveInfo = driveInfo;
             _pruningTrigger.Prune += OnPrune;
             _logger = _logManager.GetClassLogger();
             _minimumPruningDelay = TimeSpan.FromHours(_pruningConfig.FullPruningMinimumDelayHours);
@@ -74,8 +81,13 @@ namespace Nethermind.Blockchain.FullPruning
             // If we are already pruning, we don't need to do anything
             else if (CanStartNewPruning())
             {
+                // Check if we have enough disk space to run pruning
+                if (!HaveEnoughDiskSpaceToRun() && _pruningConfig.AvailableSpaceCheckEnabled)
+                {
+                    e.Status = PruningStatus.NotEnoughDiscSpace;
+                }
                 // we mark that we are waiting for block (for thread safety)
-                if (Interlocked.CompareExchange(ref _waitingForBlockProcessed, 1, 0) == 0)
+                else if (Interlocked.CompareExchange(ref _waitingForBlockProcessed, 1, 0) == 0)
                 {
                     // we don't want to start pruning in the middle of block processing, lets wait for new head.
                     _blockTree.OnUpdateMainChain += OnUpdateMainChain;
@@ -153,6 +165,28 @@ namespace Nethermind.Blockchain.FullPruning
         }
 
         private bool CanStartNewPruning() => _fullPruningDb.CanStartPruning;
+
+        private const double ChainSizeThresholdFactor = 1.2;
+
+        private bool HaveEnoughDiskSpaceToRun()
+        {
+            long? currentChainSize = _chainEstimations.StateSize;
+            if (currentChainSize is null)
+            {
+                if (_logger.IsWarn) _logger.Warn("Chain size estimation is unavailable.");
+                return true;
+            }
+
+            long available = _driveInfo.AvailableFreeSpace;
+            if (available < currentChainSize * ChainSizeThresholdFactor)
+            {
+                if (_logger.IsError)
+                    _logger.Error(
+                        $"Not enough disk space to run full pruning. Expected {(currentChainSize * ChainSizeThresholdFactor) / 1.GB()} GB. Have {available / 1.GB()} GB");
+                return false;
+            }
+            return true;
+        }
 
         private void HandlePruningFinished(object? sender, PruningEventArgs e)
         {

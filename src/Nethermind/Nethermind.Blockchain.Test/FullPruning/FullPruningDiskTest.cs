@@ -37,6 +37,8 @@ namespace Nethermind.Blockchain.Test.FullPruning
             public IPruningTrigger PruningTrigger { get; } = Substitute.For<IPruningTrigger>();
             public FullTestPruner FullPruner { get; private set; }
             public IPruningConfig PruningConfig { get; set; } = new PruningConfig();
+            public IDriveInfo DriveInfo { get; set; } = Substitute.For<IDriveInfo>();
+            public IChainEstimations _chainEstimations = Substitute.For<IChainEstimations>();
 
             public PruningTestBlockchain()
             {
@@ -47,7 +49,9 @@ namespace Nethermind.Blockchain.Test.FullPruning
             {
                 TestBlockchain chain = await base.Build(specProvider, initialValues);
                 PruningDb = (IFullPruningDb)DbProvider.StateDb;
-                FullPruner = new FullTestPruner(PruningDb, PruningTrigger, PruningConfig, BlockTree, StateReader, LogManager);
+                DriveInfo.AvailableFreeSpace.Returns(long.MaxValue);
+                _chainEstimations.StateSize.Returns((long?)null);
+                FullPruner = new FullTestPruner(PruningDb, PruningTrigger, PruningConfig, BlockTree, StateReader, DriveInfo, _chainEstimations, LogManager);
                 return chain;
             }
 
@@ -85,8 +89,10 @@ namespace Nethermind.Blockchain.Test.FullPruning
                     IPruningConfig pruningConfig,
                     IBlockTree blockTree,
                     IStateReader stateReader,
+                    IDriveInfo driveInfo,
+                    IChainEstimations chainEstimations,
                     ILogManager logManager)
-                    : base(pruningDb, pruningTrigger, pruningConfig, blockTree, stateReader, logManager)
+                    : base(pruningDb, pruningTrigger, pruningConfig, blockTree, stateReader, chainEstimations, driveInfo, logManager)
                 {
                 }
 
@@ -116,6 +122,20 @@ namespace Nethermind.Blockchain.Test.FullPruning
             {
                 await RunPruning(chain, i, true);
             }
+        }
+
+        [TestCase(100, 150, false)]
+        [TestCase(150, 100, true)]
+        [TestCase(120, 100, true)]
+        [TestCase(120, 101, false)]
+        public async Task should_check_available_space_before_running(long availableSpace, long requiredSpace, bool isEnoughSpace)
+        {
+            using PruningTestBlockchain chain = await PruningTestBlockchain.Create();
+            chain._chainEstimations.StateSize.Returns(requiredSpace);
+            chain.DriveInfo.AvailableFreeSpace.Returns(availableSpace);
+            PruningTriggerEventArgs args = new();
+            chain.PruningTrigger.Prune += Raise.Event<EventHandler<PruningTriggerEventArgs>>(args);
+            args.Status.Should().Be(isEnoughSpace ? PruningStatus.Starting : PruningStatus.NotEnoughDiscSpace);
         }
 
         private static async Task RunPruning(PruningTestBlockchain chain, int time, bool onlyFirstRuns)
