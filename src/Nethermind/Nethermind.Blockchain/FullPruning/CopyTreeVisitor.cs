@@ -20,8 +20,10 @@ namespace Nethermind.Blockchain.FullPruning
     public class CopyTreeVisitor : ITreeVisitor, IDisposable
     {
         private readonly IPruningContext _pruningContext;
+        private readonly long? _estimatedNumberOfNodes;
         private readonly ILogger _logger;
-        private readonly Stopwatch _stopwatch;
+        private readonly Stopwatch _totalStopwatch;
+        private readonly Stopwatch _loggingStopwatch;
         private long _persistedNodes = 0;
         private bool _finished = false;
         private readonly CancellationToken _cancellationToken;
@@ -29,12 +31,15 @@ namespace Nethermind.Blockchain.FullPruning
 
         public CopyTreeVisitor(
             IPruningContext pruningContext,
+            IChainEstimations chainEstimations,
             ILogManager logManager)
         {
             _pruningContext = pruningContext;
+            _estimatedNumberOfNodes = chainEstimations.NumberOfNodesInStateTree;
             _cancellationToken = pruningContext.CancellationTokenSource.Token;
             _logger = logManager.GetClassLogger();
-            _stopwatch = new Stopwatch();
+            _totalStopwatch = new Stopwatch();
+            _loggingStopwatch = new Stopwatch();
         }
 
         public bool IsFullDbScan => true;
@@ -42,7 +47,8 @@ namespace Nethermind.Blockchain.FullPruning
 
         public void VisitTree(Keccak rootHash, TrieVisitContext trieVisitContext)
         {
-            _stopwatch.Start();
+            _totalStopwatch.Start();
+            _loggingStopwatch.Start();
             if (_logger.IsWarn) _logger.Warn($"Full Pruning Started on root hash {rootHash}: do not close the node until finished or progress will be lost.");
         }
 
@@ -76,15 +82,37 @@ namespace Nethermind.Blockchain.FullPruning
                 // log message every 1 mln nodes
                 if (_persistedNodes % Million == 0)
                 {
-                    LogProgress("In Progress");
+                    LogProgress();
                 }
+            }
+        }
+
+        private void LogProgress()
+        {
+            if (_estimatedNumberOfNodes is not null)
+            {
+                TimeSpan timeSinceLastLog = _loggingStopwatch.Elapsed;
+                _loggingStopwatch.Reset();
+                double nodesPerSecond = Million / timeSinceLastLog.TotalSeconds;
+                long nodesToGo = long.Max(_estimatedNumberOfNodes.Value - _persistedNodes, 0);
+                TimeSpan timeToGo = TimeSpan.FromSeconds(nodesToGo / nodesPerSecond);
+
+                // Don't show more then 99% of progress as estimation might be incorrect
+                double percentProgress = 100 * double.Min(_persistedNodes / (double)_estimatedNumberOfNodes.Value, 0.99);
+
+                if (_logger.IsInfo)
+                    _logger.Info($"Full Pruning ~{percentProgress:F2}: Approximately {timeToGo} to go. Elapsed {_totalStopwatch.Elapsed}.");
+            }
+            else
+            {
+                LogProgress("In Progress");
             }
         }
 
         private void LogProgress(string state)
         {
             if (_logger.IsInfo)
-                _logger.Info($"Full Pruning {state}: {_stopwatch.Elapsed} {_persistedNodes / (double)Million:N} mln nodes mirrored.");
+                _logger.Info($"Full Pruning {state}: {_totalStopwatch.Elapsed} {_persistedNodes / (double)Million:N} mln nodes mirrored.");
         }
 
         public void Dispose()

@@ -10,6 +10,7 @@ namespace Nethermind.Blockchain
     public interface IChainEstimations
     {
         long? StateSize { get; }
+        long? NumberOfNodesInStateTree { get; }
     }
 
     public static class ChainSizes
@@ -17,20 +18,24 @@ namespace Nethermind.Blockchain
         public class UnknownChain : IChainEstimations
         {
             public long? StateSize => null;
+            public long? NumberOfNodesInStateTree => null;
 
             public static readonly IChainEstimations Instance = new UnknownChain();
         }
 
         private class ChainEstimations : IChainEstimations
         {
-            private readonly LinearExtrapolation _stateSizeEstimator;
+            private readonly LinearExtrapolation? _stateSizeEstimator;
+            private readonly LinearExtrapolation? _numberOfNodes;
 
-            public ChainEstimations(LinearExtrapolation stateSizeEstimator)
+            public ChainEstimations(LinearExtrapolation? stateSizeEstimator, LinearExtrapolation? numberOfNodes)
             {
                 _stateSizeEstimator = stateSizeEstimator;
+                _numberOfNodes = numberOfNodes;
             }
 
-            public long? StateSize => _stateSizeEstimator.Estimate;
+            public long? StateSize => _stateSizeEstimator?.Estimate;
+            public long? NumberOfNodesInStateTree => _numberOfNodes?.Estimate;
         }
 
         private class LinearExtrapolation
@@ -57,21 +62,28 @@ namespace Nethermind.Blockchain
             return chainId switch
             {
                 BlockchainIds.Goerli => new ChainEstimations(
-                    new LinearExtrapolation(8490.MB(), 15.MB(), new DateTime(2021, 12, 7))),
+                    new LinearExtrapolation(8490.MB(), 15.MB(), new DateTime(2021, 12, 7)),
+                    null),
                 BlockchainIds.Rinkeby => new ChainEstimations(
-                    new LinearExtrapolation(34700.MB(), 20.MB(), new DateTime(2021, 12, 7))),
-                BlockchainIds.Ropsten => new ChainEstimations(
-                    new LinearExtrapolation(35900.MB(), 25.MB(), new DateTime(2021, 12, 7))),
+                    new LinearExtrapolation(34700.MB(), 20.MB(), new DateTime(2021, 12, 7)),
+                    null),
                 BlockchainIds.Mainnet => new ChainEstimations(
-                    new LinearExtrapolation(90000.MB(), 70.MB(), new DateTime(2022, 04, 7))),
+                    new LinearExtrapolation(90000.MB(), 70.MB(), new DateTime(2022, 04, 7)),
+                    null),
                 BlockchainIds.Gnosis => new ChainEstimations(
-                    new LinearExtrapolation(18000.MB(), 48.MB(), new DateTime(2021, 12, 7))),
+                    new LinearExtrapolation(18000.MB(), 48.MB(), new DateTime(2021, 12, 7)),
+                    null),
                 BlockchainIds.EnergyWeb => new ChainEstimations(
-                    new LinearExtrapolation(15300.MB(), 15.MB(), new DateTime(2021, 12, 7))),
+                    new LinearExtrapolation(15300.MB(), 15.MB(), new DateTime(2021, 12, 7)),
+                    null),
                 BlockchainIds.Volta => new ChainEstimations(
-                    new LinearExtrapolation(17500.MB(), 10.MB(), new DateTime(2021, 11, 7))),
+                    new LinearExtrapolation(17500.MB(), 10.MB(), new DateTime(2021, 11, 7)),
+                    null),
                 BlockchainIds.PoaCore => new ChainEstimations(
-                    new LinearExtrapolation(13900.MB(), 4.MB(), new DateTime(2021, 12, 7))),
+                    new LinearExtrapolation(13900.MB(), 4.MB(), new DateTime(2021, 12, 7)),
+                    null),
+                BlockchainIds.Sepolia => new ChainEstimations(null,
+                    new LinearExtrapolation(24490000, 0, new DateTime(2023, 4, 11))),
                 _ => UnknownChain.Instance
             };
         }

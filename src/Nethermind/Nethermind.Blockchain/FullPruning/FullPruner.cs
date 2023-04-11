@@ -205,7 +205,7 @@ namespace Nethermind.Blockchain.FullPruning
             try
             {
                 pruning.MarkStart();
-                using CopyTreeVisitor copyTreeVisitor = new(pruning, _logManager);
+                using CopyTreeVisitor copyTreeVisitor = new(pruning, _chainEstimations, _logManager);
                 VisitingOptions visitingOptions = new()
                 {
                     MaxDegreeOfParallelism = _pruningConfig.FullPruningMaxDegreeOfParallelism,
