@@ -83,7 +83,7 @@ namespace Nethermind.Blockchain
                     new LinearExtrapolation(13900.MB(), 4.MB(), new DateTime(2021, 12, 7)),
                     null),
                 BlockchainIds.Sepolia => new ChainEstimations(null,
-                    new LinearExtrapolation(24490000, 0, new DateTime(2023, 4, 11))),
+                    new LinearExtrapolation(24490000, 2033333, new DateTime(2023, 4, 11))),
                 _ => UnknownChain.Instance
             };
         }

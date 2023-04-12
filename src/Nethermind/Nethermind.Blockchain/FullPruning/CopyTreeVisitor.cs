@@ -103,13 +103,16 @@ namespace Nethermind.Blockchain.FullPruning
 
                 if (_logger.IsInfo)
                     _logger.Info(
-                        $"Full Pruning ~{percentProgress:F2}%: Approximately {timeToGo} to go. Elapsed {_stopwatch.Elapsed}.");
+                        $"Full Pruning ~{percentProgress:f3}% {ProgressBar(percentProgress)}: Approximately {timeToGo:g} to go. Elapsed {_stopwatch.Elapsed:g}.");
             }
             else
             {
                 LogProgress("In Progress");
             }
         }
+
+        private string ProgressBar(double progress) =>
+            $"[{new string('*', (int)progress / 10)}{new string(' ', 10 - (int)progress / 10)}]";
 
         private void LogProgress(string state)
         {
