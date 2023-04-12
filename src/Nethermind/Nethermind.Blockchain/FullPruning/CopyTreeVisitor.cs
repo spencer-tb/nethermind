@@ -22,12 +22,12 @@ namespace Nethermind.Blockchain.FullPruning
         private readonly IPruningContext _pruningContext;
         private readonly long? _estimatedNumberOfNodes;
         private readonly ILogger _logger;
-        private readonly Stopwatch _totalStopwatch;
-        private readonly Stopwatch _loggingStopwatch;
+        private readonly Stopwatch _stopwatch;
         private long _persistedNodes = 0;
         private bool _finished = false;
         private readonly CancellationToken _cancellationToken;
         private const int Million = 1_000_000;
+        private const int PersistedNodesLoggingInterval = 250_000;
 
         public CopyTreeVisitor(
             IPruningContext pruningContext,
@@ -38,8 +38,7 @@ namespace Nethermind.Blockchain.FullPruning
             _estimatedNumberOfNodes = chainEstimations.NumberOfNodesInStateTree;
             _cancellationToken = pruningContext.CancellationTokenSource.Token;
             _logger = logManager.GetClassLogger();
-            _totalStopwatch = new Stopwatch();
-            _loggingStopwatch = new Stopwatch();
+            _stopwatch = new Stopwatch();
         }
 
         public bool IsFullDbScan => true;
@@ -47,8 +46,7 @@ namespace Nethermind.Blockchain.FullPruning
 
         public void VisitTree(Keccak rootHash, TrieVisitContext trieVisitContext)
         {
-            _totalStopwatch.Start();
-            _loggingStopwatch.Start();
+            _stopwatch.Start();
             if (_logger.IsWarn) _logger.Warn($"Full Pruning Started on root hash {rootHash}: do not close the node until finished or progress will be lost.");
         }
 
@@ -80,7 +78,7 @@ namespace Nethermind.Blockchain.FullPruning
                 Interlocked.Increment(ref _persistedNodes);
 
                 // log message every 1 mln nodes
-                if (_persistedNodes % Million == 0)
+                if (_persistedNodes % PersistedNodesLoggingInterval == 0)
                 {
                     LogProgress();
                 }
@@ -91,9 +89,7 @@ namespace Nethermind.Blockchain.FullPruning
         {
             if (_estimatedNumberOfNodes is not null)
             {
-                TimeSpan timeSinceLastLog = _loggingStopwatch.Elapsed;
-                _loggingStopwatch.Reset();
-                double nodesPerSecond = Million / timeSinceLastLog.TotalSeconds;
+                double nodesPerSecond = _persistedNodes / _stopwatch.Elapsed.TotalSeconds;
                 long nodesToGo = long.Max(_estimatedNumberOfNodes.Value - _persistedNodes, 0);
                 TimeSpan timeToGo = TimeSpan.FromSeconds(nodesToGo / nodesPerSecond);
 
@@ -101,7 +97,13 @@ namespace Nethermind.Blockchain.FullPruning
                 double percentProgress = 100 * double.Min(_persistedNodes / (double)_estimatedNumberOfNodes.Value, 0.99);
 
                 if (_logger.IsInfo)
-                    _logger.Info($"Full Pruning ~{percentProgress:F2}: Approximately {timeToGo} to go. Elapsed {_totalStopwatch.Elapsed}.");
+                    _logger.Info(
+                        $"Nodes per sec {nodesPerSecond}, nodesToGo {nodesToGo}, timeToGo {timeToGo}, persisted {_persistedNodes}, estimated {_estimatedNumberOfNodes}");
+
+
+                if (_logger.IsInfo)
+                    _logger.Info(
+                        $"Full Pruning ~{percentProgress:F2}%: Approximately {timeToGo} to go. Elapsed {_stopwatch.Elapsed}.");
             }
             else
             {
@@ -112,7 +114,7 @@ namespace Nethermind.Blockchain.FullPruning
         private void LogProgress(string state)
         {
             if (_logger.IsInfo)
-                _logger.Info($"Full Pruning {state}: {_totalStopwatch.Elapsed} {_persistedNodes / (double)Million:N} mln nodes mirrored.");
+                _logger.Info($"Full Pruning {state}: {_stopwatch.Elapsed} {_persistedNodes / (double)Million:N} mln nodes mirrored.");
         }
 
         public void Dispose()
