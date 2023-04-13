@@ -38,6 +38,9 @@ namespace Nethermind.Consensus.Processing
 
         private const int MaxUncommittedBlocks = 64;
 
+        public static readonly Address HISTORY_STORAGE_ADDRESS = Address.FromNumber(UInt256.Parse("0xfffffffffffffffffffffffffffffffffffffffd"));
+        public static readonly UInt256 SLOTS_PER_HISTORICAL_ROOT = (UInt256)8192;
+
         /// <summary>
         /// We use a single receipt tracer for all blocks. Internally receipt tracer forwards most of the calls
         /// to any block-specific tracers.
@@ -231,8 +234,6 @@ namespace Nethermind.Consensus.Processing
 
             if (spec.BeaconStateRootAvailable)
             {
-                Address HISTORY_STORAGE_ADDRESS = Address.FromNumber(UInt256.Parse("0xfffffffffffffffffffffffffffffffffffffffd"));
-
                 var startTimestamp = _blockExplorer.FindBlock(block.ParentHash).Header.Timestamp;
                 var endTimestamp = block.Header.Timestamp;
 

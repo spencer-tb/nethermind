@@ -67,6 +67,10 @@ namespace Nethermind.Evm
         private byte[] _returnDataBuffer = Array.Empty<byte>();
         private ITxTracer _txTracer = NullTxTracer.Instance;
 
+
+        public static readonly Address HISTORY_STORAGE_ADDRESS = Address.FromNumber(UInt256.Parse("0xfffffffffffffffffffffffffffffffffffffffd"));
+        public static readonly UInt256 SLOTS_PER_HISTORICAL_ROOT = (UInt256)8192;
+
         public VirtualMachine(
             IBlockhashProvider? blockhashProvider,
             ISpecProvider? specProvider,
@@ -1646,9 +1650,9 @@ namespace Nethermind.Evm
                                     return CallResult.OutOfGasException;
                                 }
 
-                                stack.PopUInt256(out UInt256 block_number);
-                                Address HISTORY_STORAGE_ADDRESS = Address.FromNumber(UInt256.Parse("0xfffffffffffffffffffffffffffffffffffffffd"));
-                                StorageCell storageCell = new(HISTORY_STORAGE_ADDRESS, block_number);
+                                stack.PopUInt256(out UInt256 slot);
+                                UInt256.Mod(slot, SLOTS_PER_HISTORICAL_ROOT, out UInt256 resultKey);
+                                StorageCell storageCell = new(HISTORY_STORAGE_ADDRESS, resultKey);
                                 byte[] beaconStateRootBytes = _storage.Get(storageCell);
                                 stack.PushBytes(beaconStateRootBytes);
                             }
