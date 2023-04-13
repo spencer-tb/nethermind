@@ -24,11 +24,11 @@ public class Block
         BlockHeader blockHeader,
         IEnumerable<Transaction> transactions,
         IEnumerable<BlockHeader> uncles,
-        IEnumerable<Withdrawal>? withdrawals = null,
-        RlpBase? BeaconStateRoot = null)
+        IEnumerable<Withdrawal>? withdrawals = null
+        )
     {
         Header = blockHeader;
-        Body = new(transactions.ToArray(), uncles.ToArray(), withdrawals?.ToArray(), BeaconStateRoot);
+        Body = new(transactions.ToArray(), uncles.ToArray(), withdrawals?.ToArray());
     }
 
     public Block(BlockHeader blockHeader) : this(
@@ -106,8 +106,6 @@ public class Block
     public bool IsBodyMissing => Header.HasBody && Body.IsEmpty;
 
     public Keccak? WithdrawalsRoot => Header.WithdrawalsRoot; // do not add setter here
-    public RlpBase? BeaconStateRoot => Body.BeaconStateRoot!; // do not add setter here
-
     public override string ToString() => ToString(Format.Short);
 
     public string ToString(Format format) => format switch

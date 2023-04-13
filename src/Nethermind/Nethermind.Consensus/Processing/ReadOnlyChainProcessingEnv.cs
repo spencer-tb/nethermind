@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using System;
+using Nethermind.Blockchain;
 using Nethermind.Blockchain.Receipts;
 using Nethermind.Consensus.Rewards;
 using Nethermind.Consensus.Validators;
@@ -35,6 +36,7 @@ namespace Nethermind.Consensus.Processing
             IReadOnlyDbProvider dbProvider,
             ISpecProvider specProvider,
             ILogManager logManager,
+            IBlockTree blocktree,
             IBlockProcessor.IBlockTransactionsExecutor? blockTransactionsExecutor = null)
         {
             _txEnv = txEnv;
@@ -51,7 +53,8 @@ namespace Nethermind.Consensus.Processing
                 _txEnv.StorageProvider,
                 receiptStorage,
                 NullWitnessCollector.Instance,
-                logManager);
+                logManager,
+                blocktree);
 
             _blockProcessingQueue = new BlockchainProcessor(_txEnv.BlockTree, BlockProcessor, recoveryStep, _txEnv.StateReader, logManager, BlockchainProcessor.Options.NoReceipts);
             BlockProcessingQueue = _blockProcessingQueue;

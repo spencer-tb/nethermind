@@ -18,6 +18,7 @@ using Nethermind.Int256;
 using Nethermind.Logging;
 using Nethermind.Specs.Forks;
 using Nethermind.State;
+using Org.BouncyCastle.Crypto.Prng;
 
 namespace Nethermind.Consensus.Processing
 {
@@ -32,6 +33,7 @@ namespace Nethermind.Consensus.Processing
         private readonly IBlockValidator _blockValidator;
         private readonly IStorageProvider _storageProvider;
         private readonly IRewardCalculator _rewardCalculator;
+        private readonly IBlockTree _blockExplorer;
         private readonly IBlockProcessor.IBlockTransactionsExecutor _blockTransactionsExecutor;
 
         private const int MaxUncommittedBlocks = 64;
@@ -52,7 +54,9 @@ namespace Nethermind.Consensus.Processing
             IReceiptStorage? receiptStorage,
             IWitnessCollector? witnessCollector,
             ILogManager? logManager,
-            IWithdrawalProcessor? withdrawalProcessor = null)
+            IBlockTree? blocckTree,
+            IWithdrawalProcessor? withdrawalProcessor = null
+            )
         {
             _logger = logManager?.GetClassLogger() ?? throw new ArgumentNullException(nameof(logManager));
             _specProvider = specProvider ?? throw new ArgumentNullException(nameof(specProvider));
@@ -64,7 +68,7 @@ namespace Nethermind.Consensus.Processing
             _withdrawalProcessor = withdrawalProcessor ?? new WithdrawalProcessor(stateProvider, logManager);
             _rewardCalculator = rewardCalculator ?? throw new ArgumentNullException(nameof(rewardCalculator));
             _blockTransactionsExecutor = blockTransactionsExecutor ?? throw new ArgumentNullException(nameof(blockTransactionsExecutor));
-
+            _blockExplorer = blocckTree ?? throw new ArgumentNullException(nameof(rewardCalculator));
 
             _receiptsTracer = new BlockReceiptsTracer();
         }
@@ -228,8 +232,13 @@ namespace Nethermind.Consensus.Processing
             if (spec.BeaconStateRootAvailable)
             {
                 Address HISTORY_STORAGE_ADDRESS = Address.FromNumber(UInt256.Parse("0xfffffffffffffffffffffffffffffffffffffffd"));
+
+                var startTimestamp = _blockExplorer.FindBlock(block.ParentHash).Header.Timestamp;
+                var endTimestamp = block.Header.Timestamp;
+
+
                 StorageCell storageCell = new(HISTORY_STORAGE_ADDRESS, (UInt256)block.Number);
-                RlpBase beaconStateRootValue = block.BeaconStateRoot ?? throw new InvalidBlockException(block);
+                Keccak beaconStateRootValue = block.Header.BeaconStateRoot ?? throw new InvalidBlockException(block);
                 _storageProvider.Set(storageCell, beaconStateRootValue.Bytes);
             }
 

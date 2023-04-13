@@ -84,12 +84,18 @@ namespace Nethermind.Serialization.Rlp
             {
                 blockHeader.WithdrawalsRoot = decoderContext.DecodeKeccak();
 
+                if (itemsRemaining >= Keccak.Size)
+                {
+                    blockHeader.BeaconStateRoot = decoderContext.DecodeKeccak();
+                }
+
                 if (itemsRemaining == 2 && decoderContext.Position != headerCheck)
                 {
                     blockHeader.ExcessDataGas = decoderContext.DecodeUInt256();
                 }
             }
 
+            
             if ((rlpBehaviors & RlpBehaviors.AllowExtraBytes) != RlpBehaviors.AllowExtraBytes)
             {
                 decoderContext.Check(headerCheck);
@@ -164,6 +170,11 @@ namespace Nethermind.Serialization.Rlp
             {
                 blockHeader.WithdrawalsRoot = rlpStream.DecodeKeccak();
 
+                if (itemsRemaining >= Keccak.Size)
+                {
+                    blockHeader.BeaconStateRoot = rlpStream.DecodeKeccak();
+                }
+
                 if (itemsRemaining == 2 && rlpStream.Position != headerCheck)
                 {
                     blockHeader.ExcessDataGas = rlpStream.DecodeUInt256();
@@ -227,6 +238,11 @@ namespace Nethermind.Serialization.Rlp
                 rlpStream.Encode(header.WithdrawalsRoot ?? Keccak.Zero);
             }
 
+            if (header.BeaconStateRoot is not null)
+            {
+                rlpStream.Encode(header.BeaconStateRoot?? Keccak.Zero);
+            }
+
             if (header.ExcessDataGas is not null)
             {
                 rlpStream.Encode(header.ExcessDataGas.Value);
@@ -270,6 +286,7 @@ namespace Nethermind.Serialization.Rlp
                                 + Rlp.LengthOf(item.ExtraData)
                                 + (item.Number < Eip1559TransitionBlock ? 0 : Rlp.LengthOf(item.BaseFeePerGas))
                                 + (item.WithdrawalsRoot is null && item.ExcessDataGas is null ? 0 : Rlp.LengthOfKeccakRlp)
+                                + (item.BeaconStateRoot is null ? 0 : Rlp.LengthOfKeccakRlp)
                                 + (item.ExcessDataGas is null ? 0 : Rlp.LengthOf(item.ExcessDataGas.Value));
 
             if (notForSealing)

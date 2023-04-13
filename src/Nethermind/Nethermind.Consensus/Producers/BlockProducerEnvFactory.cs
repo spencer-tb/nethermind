@@ -81,7 +81,8 @@ namespace Nethermind.Consensus.Producers
                     _rewardCalculatorSource,
                     _receiptStorage,
                     _logManager,
-                    _blocksConfig);
+                    _blocksConfig,
+                    _blockTree);
 
             IBlockchainProcessor blockchainProcessor =
                 new BlockchainProcessor(
@@ -140,7 +141,9 @@ namespace Nethermind.Consensus.Producers
             IBlockValidator blockValidator,
             IRewardCalculatorSource rewardCalculatorSource,
             IReceiptStorage receiptStorage,
-            ILogManager logManager, IBlocksConfig blocksConfig) =>
+            ILogManager logManager,
+            IBlocksConfig blocksConfig,
+            IBlockTree blockTree) =>
             new(specProvider,
                 blockValidator,
                 rewardCalculatorSource.Get(readOnlyTxProcessingEnv.TransactionProcessor),
@@ -150,6 +153,7 @@ namespace Nethermind.Consensus.Producers
                 receiptStorage,
                 NullWitnessCollector.Instance,
                 logManager,
+                blockTree,
                 new BlockProductionWithdrawalProcessor(new WithdrawalProcessor(readOnlyTxProcessingEnv.StateProvider, logManager)));
 
     }

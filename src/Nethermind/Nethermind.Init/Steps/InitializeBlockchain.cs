@@ -366,7 +366,8 @@ namespace Nethermind.Init.Steps
                 _api.StorageProvider,
                 _api.ReceiptStorage,
                 _api.WitnessCollector,
-                _api.LogManager);
+                _api.LogManager,
+                _api.BlockTree);
         }
 
         // TODO: remove from here - move to consensus?

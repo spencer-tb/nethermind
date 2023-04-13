@@ -66,6 +66,7 @@ namespace Nethermind.JsonRpc.Test.Modules
                     dbProvider,
                     Blockchain.SpecProvider,
                     Blockchain.LogManager,
+                    Blockchain.BlockTree,
                     rpcBlockTransactionsExecutor);
 
                 Tracer tracer = new(chainProcessingEnv.StateProvider, chainProcessingEnv.ChainProcessor);

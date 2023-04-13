@@ -42,23 +42,14 @@ namespace Nethermind.Serialization.Rlp
             rlpStream.Check(transactionsCheck);
 
             List<BlockHeader> uncleHeaders = new();
-            RlpBase? beaconStateRoot = null;
             int unclesSequenceLength = rlpStream.ReadSequenceLength();
-            if (unclesSequenceLength == 32) // ideally this should use timestamp or eipEnabled check
+            int unclesCheck = rlpStream.Position + unclesSequenceLength;
+            while (rlpStream.Position < unclesCheck)
             {
-                Span<byte> next32Bytes = rlpStream.Read(32);
-                beaconStateRoot = new RlpBase(next32Bytes.ToArray());
+                uncleHeaders.Add(Rlp.Decode<BlockHeader>(rlpStream, rlpBehaviors));
             }
-            else
-            {
-                int unclesCheck = rlpStream.Position + unclesSequenceLength;
-                while (rlpStream.Position < unclesCheck)
-                {
-                    uncleHeaders.Add(Rlp.Decode<BlockHeader>(rlpStream, rlpBehaviors));
-                }
 
-                rlpStream.Check(unclesCheck);
-            }
+            rlpStream.Check(unclesCheck);
 
             List<Withdrawal> withdrawals = null;
 
@@ -81,7 +72,7 @@ namespace Nethermind.Serialization.Rlp
                 rlpStream.Check(blockCheck);
             }
 
-            return new(header, transactions, uncleHeaders, withdrawals, beaconStateRoot);
+            return new(header, transactions, uncleHeaders, withdrawals);
         }
 
         private (int Total, int Txs, int Uncles, int? Withdrawals) GetContentLength(Block item, RlpBehaviors rlpBehaviors)
@@ -179,21 +170,12 @@ namespace Nethermind.Serialization.Rlp
             int unclesSequenceLength = decoderContext.ReadSequenceLength();
             int unclesCheck = decoderContext.Position + unclesSequenceLength;
             List<BlockHeader> uncleHeaders = new();
-            RlpBase? beaconStateRoot = null;
-            if (unclesSequenceLength == 32) // ideally this should use timestamp or eipEnabled check
+            while (decoderContext.Position < unclesCheck)
             {
-                Span<byte> bsl_root = decoderContext.Read(32);
-                beaconStateRoot = new RlpBase(bsl_root.ToArray());
+                uncleHeaders.Add(Rlp.Decode<BlockHeader>(ref decoderContext, rlpBehaviors));
             }
-            else
-            {
-                while (decoderContext.Position < unclesCheck)
-                {
-                    uncleHeaders.Add(Rlp.Decode<BlockHeader>(ref decoderContext, rlpBehaviors));
-                }
 
-                decoderContext.Check(unclesCheck);
-            }
+            decoderContext.Check(unclesCheck);
 
             List<Withdrawal> withdrawals = null;
 
@@ -216,7 +198,7 @@ namespace Nethermind.Serialization.Rlp
                 decoderContext.Check(blockCheck);
             }
 
-            return new(header, transactions, uncleHeaders, withdrawals, beaconStateRoot);
+            return new(header, transactions, uncleHeaders, withdrawals);
         }
 
         public Rlp Encode(Block? item, RlpBehaviors rlpBehaviors = RlpBehaviors.None)
@@ -248,18 +230,10 @@ namespace Nethermind.Serialization.Rlp
                 stream.Encode(item.Transactions[i]);
             }
 
-            if (item.Uncles.Length > 0 && item.BeaconStateRoot is not null) // ideally this should chose  an eip4788 activation check
+            stream.StartSequence(unclesLength);
+            for (int i = 0; i < item.Uncles.Length; i++)
             {
-                stream.StartSequence(32);
-                stream.Encode(item.BeaconStateRoot.Bytes);
-            }
-            else
-            {
-                stream.StartSequence(unclesLength);
-                for (int i = 0; i < item.Uncles.Length; i++)
-                {
-                    stream.Encode(item.Uncles[i]);
-                }
+                stream.Encode(item.Uncles[i]);
             }
 
             if (withdrawalsLength.HasValue)

@@ -69,7 +69,8 @@ namespace Nethermind.Merge.AuRa
             IRewardCalculatorSource rewardCalculatorSource,
             IReceiptStorage receiptStorage,
             ILogManager logManager,
-            IBlocksConfig blocksConfig)
+            IBlocksConfig blocksConfig,
+            IBlockTree blockTree)
         {
             return new AuRaMergeBlockProcessor(
                 specProvider,

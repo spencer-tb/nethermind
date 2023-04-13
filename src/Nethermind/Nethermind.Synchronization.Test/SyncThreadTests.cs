@@ -305,7 +305,8 @@ namespace Nethermind.Synchronization.Test
                 storageProvider,
                 receiptStorage,
                 NullWitnessCollector.Instance,
-                logManager);
+                logManager,
+                tree);
 
             RecoverSignatures step = new(ecdsa, txPool, specProvider, logManager);
             BlockchainProcessor processor = new(tree, blockProcessor, step, stateReader, logManager,
@@ -329,7 +330,8 @@ namespace Nethermind.Synchronization.Test
                 devStorage,
                 receiptStorage,
                 NullWitnessCollector.Instance,
-                logManager);
+                logManager,
+                tree);
 
             BlockchainProcessor devChainProcessor = new(tree, devBlockProcessor, step, stateReader, logManager,
                 BlockchainProcessor.Options.NoReceipts);

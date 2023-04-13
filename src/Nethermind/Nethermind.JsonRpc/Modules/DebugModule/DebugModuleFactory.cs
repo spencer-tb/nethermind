@@ -88,6 +88,7 @@ namespace Nethermind.JsonRpc.Modules.DebugModule
                 _dbProvider,
                 _specProvider,
                 _logManager,
+                _blockTree,
                 transactionsExecutor);
 
             GethStyleTracer tracer = new(

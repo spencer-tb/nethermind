@@ -100,9 +100,6 @@ public class BlockValidator : IBlockValidator
         if (!ValidateWithdrawals(block, spec, out _))
             return false;
 
-        if (spec.BeaconStateRootAvailable && !ValidateBeaconStateRoot(block, out _))
-            return false;
-
         return true;
     }
 
@@ -204,13 +201,6 @@ public class BlockValidator : IBlockValidator
         unclesHash = UnclesHash.Calculate(block);
 
         return block.Header.UnclesHash == unclesHash;
-    }
-
-    public static bool ValidateBeaconStateRoot(Block block, out Keccak beaconRoot)
-    {
-        beaconRoot = Keccak.Compute(Rlp.Encode(block.Body.BeaconStateRoot).Bytes);
-
-        return block.Header.BeaconStateRoot == beaconRoot;
     }
 
     public static bool ValidateWithdrawalsHashMatches(Block block, out Keccak? withdrawalsRoot)

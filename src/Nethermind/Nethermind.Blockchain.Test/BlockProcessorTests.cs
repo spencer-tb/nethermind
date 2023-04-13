@@ -29,6 +29,9 @@ using Nethermind.Consensus.Rewards;
 using Nethermind.Consensus.Withdrawals;
 using Nethermind.Core.Test.Blockchain;
 using Nethermind.Evm.TransactionProcessing;
+using Nethermind.Core.Specs;
+using Nethermind.Db.Blooms;
+using Nethermind.State.Repositories;
 
 namespace Nethermind.Blockchain.Test
 {
@@ -38,10 +41,24 @@ namespace Nethermind.Blockchain.Test
         [Test, Timeout(Timeout.MaxTestTime)]
         public void Prepared_block_contains_author_field()
         {
-            IDb stateDb = new MemDb();
-            IDb codeDb = new MemDb();
-            TrieStore trieStore = new(stateDb, LimboLogs.Instance);
-            IStateProvider stateProvider = new StateProvider(trieStore, codeDb, LimboLogs.Instance);
+            ISpecProvider specProvider = MainnetSpecProvider.Instance;
+            DbProvider dbProvider = new(DbModeHint.Mem);
+            dbProvider.RegisterDb(DbNames.BlockInfos, new MemDb());
+            dbProvider.RegisterDb(DbNames.Blocks, new MemDb());
+            dbProvider.RegisterDb(DbNames.Headers, new MemDb());
+            dbProvider.RegisterDb(DbNames.State, new MemDb());
+            dbProvider.RegisterDb(DbNames.Code, new MemDb());
+            dbProvider.RegisterDb(DbNames.Metadata, new MemDb());
+
+            TrieStore trieStore = new(dbProvider.GetDb<IDb>("stateDb"), LimboLogs.Instance);
+            IStateProvider stateProvider = new StateProvider(trieStore, dbProvider.GetDb<IDb>("codeDb"), LimboLogs.Instance);
+            BlockTree blockTree = new(
+                dbProvider,
+                new ChainLevelInfoRepository(dbProvider),
+                specProvider,
+                NullBloomStorage.Instance,
+                LimboLogs.Instance);
+
             ITransactionProcessor transactionProcessor = Substitute.For<ITransactionProcessor>();
             BlockProcessor processor = new(
                 RinkebySpecProvider.Instance,
@@ -52,7 +69,8 @@ namespace Nethermind.Blockchain.Test
                 new StorageProvider(trieStore, stateProvider, LimboLogs.Instance),
                 NullReceiptStorage.Instance,
                 NullWitnessCollector.Instance,
-                LimboLogs.Instance);
+                LimboLogs.Instance,
+                blockTree);
 
             BlockHeader header = Build.A.BlockHeader.WithAuthor(TestItem.AddressD).TestObject;
             Block block = Build.A.Block.WithHeader(header).TestObject;
@@ -68,11 +86,24 @@ namespace Nethermind.Blockchain.Test
         [Test, Timeout(Timeout.MaxTestTime)]
         public void Can_store_a_witness()
         {
-            IDb stateDb = new MemDb();
-            IDb codeDb = new MemDb();
-            var trieStore = new TrieStore(stateDb, LimboLogs.Instance);
+            ISpecProvider specProvider = MainnetSpecProvider.Instance;
+            DbProvider dbProvider = new(DbModeHint.Mem);
+            dbProvider.RegisterDb(DbNames.BlockInfos, new MemDb());
+            dbProvider.RegisterDb(DbNames.Blocks, new MemDb());
+            dbProvider.RegisterDb(DbNames.Headers, new MemDb());
+            dbProvider.RegisterDb(DbNames.State, new MemDb());
+            dbProvider.RegisterDb(DbNames.Code, new MemDb());
+            dbProvider.RegisterDb(DbNames.Metadata, new MemDb());
 
-            IStateProvider stateProvider = new StateProvider(trieStore, codeDb, LimboLogs.Instance);
+            TrieStore trieStore = new(dbProvider.GetDb<IDb>("stateDb"), LimboLogs.Instance);
+            IStateProvider stateProvider = new StateProvider(trieStore, dbProvider.GetDb<IDb>("codeDb"), LimboLogs.Instance);
+            BlockTree blockTree = new(
+                dbProvider,
+                new ChainLevelInfoRepository(dbProvider),
+                specProvider,
+                NullBloomStorage.Instance,
+                LimboLogs.Instance);
+
             ITransactionProcessor transactionProcessor = Substitute.For<ITransactionProcessor>();
             IWitnessCollector witnessCollector = Substitute.For<IWitnessCollector>();
             BlockProcessor processor = new(
@@ -84,7 +115,8 @@ namespace Nethermind.Blockchain.Test
                 new StorageProvider(trieStore, stateProvider, LimboLogs.Instance),
                 NullReceiptStorage.Instance,
                 witnessCollector,
-                LimboLogs.Instance);
+                LimboLogs.Instance,
+                blockTree);
 
             BlockHeader header = Build.A.BlockHeader.WithAuthor(TestItem.AddressD).TestObject;
             Block block = Build.A.Block.WithHeader(header).TestObject;
@@ -100,10 +132,24 @@ namespace Nethermind.Blockchain.Test
         [Test, Timeout(Timeout.MaxTestTime)]
         public void Recovers_state_on_cancel()
         {
-            IDb stateDb = new MemDb();
-            IDb codeDb = new MemDb();
-            TrieStore trieStore = new(stateDb, LimboLogs.Instance);
-            IStateProvider stateProvider = new StateProvider(trieStore, codeDb, LimboLogs.Instance);
+            ISpecProvider specProvider = MainnetSpecProvider.Instance;
+            DbProvider dbProvider = new(DbModeHint.Mem);
+            dbProvider.RegisterDb(DbNames.BlockInfos, new MemDb());
+            dbProvider.RegisterDb(DbNames.Blocks, new MemDb());
+            dbProvider.RegisterDb(DbNames.Headers, new MemDb());
+            dbProvider.RegisterDb(DbNames.State, new MemDb());
+            dbProvider.RegisterDb(DbNames.Code, new MemDb());
+            dbProvider.RegisterDb(DbNames.Metadata, new MemDb());
+
+            TrieStore trieStore = new(dbProvider.GetDb<IDb>("stateDb"), LimboLogs.Instance);
+            IStateProvider stateProvider = new StateProvider(trieStore, dbProvider.GetDb<IDb>("codeDb"), LimboLogs.Instance);
+            BlockTree blockTree = new(
+                dbProvider,
+                new ChainLevelInfoRepository(dbProvider),
+                specProvider,
+                NullBloomStorage.Instance,
+                LimboLogs.Instance);
+
             ITransactionProcessor transactionProcessor = Substitute.For<ITransactionProcessor>();
             BlockProcessor processor = new(
                 RinkebySpecProvider.Instance,
@@ -114,7 +160,8 @@ namespace Nethermind.Blockchain.Test
                 new StorageProvider(trieStore, stateProvider, LimboLogs.Instance),
                 NullReceiptStorage.Instance,
                 NullWitnessCollector.Instance,
-                LimboLogs.Instance);
+                LimboLogs.Instance,
+                blockTree);
 
             BlockHeader header = Build.A.BlockHeader.WithNumber(1).WithAuthor(TestItem.AddressD).TestObject;
             Block block = Build.A.Block.WithTransactions(1, MuirGlacier.Instance).WithHeader(header).TestObject;
