@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Nethermind.Blockchain;
 using Nethermind.Blockchain.Receipts;
 using Nethermind.Consensus.Rewards;
@@ -224,6 +225,12 @@ namespace Nethermind.Consensus.Processing
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private UInt256 ConvertToSlop(UInt256 timestamp)
+        {
+            return (timestamp - 1438269973 )/ 12;
+        }
+
         // TODO: block processor pipeline
         protected virtual TxReceipt[] ProcessBlock(
             Block block,
@@ -234,13 +241,15 @@ namespace Nethermind.Consensus.Processing
 
             if (spec.BeaconStateRootAvailable)
             {
-                var startTimestamp = _blockExplorer.FindBlock(block.ParentHash).Header.Timestamp;
-                var endTimestamp = block.Header.Timestamp;
+                var startTimestamp = ConvertToSlop(_blockExplorer.FindBlock(block.ParentHash).Header.Timestamp);
+                var endTimestamp = ConvertToSlop(block.Header.Timestamp);
 
-
-                StorageCell storageCell = new(HISTORY_STORAGE_ADDRESS, (UInt256)block.Number);
-                Keccak beaconStateRootValue = block.Header.BeaconStateRoot ?? throw new InvalidBlockException(block);
-                _storageProvider.Set(storageCell, beaconStateRootValue.Bytes);
+                for(var slot = startTimestamp; slot < endTimestamp; slot++) {
+                    UInt256.Mod(slot, SLOTS_PER_HISTORICAL_ROOT, out var result);
+                    StorageCell storageCell = new(HISTORY_STORAGE_ADDRESS, result);
+                    Keccak beaconStateRootValue = block.Header.BeaconStateRoot ?? throw new InvalidBlockException(block);
+                    _storageProvider.Set(storageCell, beaconStateRootValue.Bytes);
+                }
             }
 
             _receiptsTracer.SetOtherTracer(blockTracer);
