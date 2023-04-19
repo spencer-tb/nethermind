@@ -60,7 +60,7 @@ jobs:
       - name: Run stArgsZeroOneBalance
         continue-on-error: true
         working-directory: hive
-        run: ./hive --client nethermind --sim ethereum/consensus --sim.limit /(stArgsZeroOneBalance|stAttackTest) --sim.parallelism $PARALLELISM
+        run: ./hive --client nethermind --sim ethereum/consensus --sim.limit /stArgsZeroOneBalance|stAttackTest --sim.parallelism $PARALLELISM
       
       - name: Print results
         run: |
