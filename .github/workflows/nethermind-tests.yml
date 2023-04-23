@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 env:
-  BUILD_CONFIG: release
+  BUILD_CONFIG: debug
   DOTNET_VERSION: 7
   DOTNET_INSTALL_DIR: '~/.dotnet'
 
