@@ -33,8 +33,6 @@ namespace Nethermind.Trie.Pruning
 
         private IBatch? _currentBatch = null;
 
-        private readonly IPathTrieNodeCache _committedNodes;
-
         private bool _lastPersistedReachedReorgBoundary;
         private Task _pruningTask = Task.CompletedTask;
         private CancellationTokenSource _pruningTaskCancellationTokenSource = new();
@@ -59,7 +57,6 @@ namespace Nethermind.Trie.Pruning
             _logger = logManager?.GetClassLogger<TrieStore>() ?? throw new ArgumentNullException(nameof(logManager));
             _keyValueStore = keyValueStore ?? throw new ArgumentNullException(nameof(keyValueStore));
             _persistenceStrategy = persistenceStrategy ?? throw new ArgumentNullException(nameof(persistenceStrategy));
-            _committedNodes = new TrieNodeBlockCache(this, 0, logManager);
         }
 
         public long LastPersistedBlockNumber
@@ -108,15 +105,6 @@ namespace Nethermind.Trie.Pruning
             }
         }
 
-        public int CachedNodesCount
-        {
-            get
-            {
-                Metrics.CachedNodesCount = _committedNodes.Count;
-                return _committedNodes.Count;
-            }
-        }
-
         public void CommitNode(long blockNumber, NodeCommitInfo nodeCommitInfo)
         {
             if (blockNumber < 0) throw new ArgumentOutOfRangeException(nameof(blockNumber));
@@ -137,11 +125,9 @@ namespace Nethermind.Trie.Pruning
                     throw new TrieStoreException($"{nameof(TrieNode.LastSeen)} set on {node} committed at {blockNumber}.");
                 }
 
-                _committedNodes.AddNode(blockNumber, node);
                 node.LastSeen = Math.Max(blockNumber, node.LastSeen ?? 0);
 
-                if (_committedNodes.MaxNumberOfBlocks == 0)
-                    Persist(node, blockNumber, null);
+                Persist(node, blockNumber, null);
 
                 CommittedNodesCount++;
             }
@@ -165,23 +151,10 @@ namespace Nethermind.Trie.Pruning
                         // if (_logger.IsTrace) _logger.Trace($"Current root (block {blockNumber}): {set.Root}, block {set.BlockNumber}");
                         set.Seal();
                     }
-                    if (blockNumber == 0) // special case for genesis
-                    {
-                        Persist(0);
-                        AnnounceReorgBoundaries();
-                    }
-                    else
-                    {
-                        long persistTarget = Math.Max(LastPersistedBlockNumber, set.BlockNumber - _committedNodes.MaxNumberOfBlocks);
-                        if (persistTarget > LastPersistedBlockNumber)
-                        {
-                            Persist(persistTarget);
-                            AnnounceReorgBoundaries();
-                        }
-                    }
+
+                    Persist(blockNumber);
+                    AnnounceReorgBoundaries();
                 }
-                _committedNodes?.SetRootHashForBlock(blockNumber, root?.Keccak);
-                // _logger.Info($"SetRootHashForBlock {trieType} {blockNumber} {root?.Keccak}");
 
                 if (trieType == TrieType.State)
                     CurrentPackage = null;
@@ -268,29 +241,18 @@ namespace Nethermind.Trie.Pruning
 
         public TrieNode? FindCachedOrUnknown(Keccak keccak, Span<byte> nodePath, Span<byte> storagePrefix)
         {
-            TrieNode node = _committedNodes.GetNode(storagePrefix.ToArray().Concat(nodePath.ToArray()).ToArray(), keccak);
-            if (node is null)
+            return new TrieNode(NodeType.Unknown, path: nodePath)
             {
-                return new TrieNode(NodeType.Unknown, path: nodePath)
-                {
-                    StoreNibblePathPrefix = storagePrefix.ToArray()
-                };
-            }
-
-            return node.FullRlp is null ? null : node;
+                StoreNibblePathPrefix = storagePrefix.ToArray()
+            };
         }
 
         public TrieNode? FindCachedOrUnknown(Span<byte> nodePath, Span<byte> storagePrefix, Keccak rootHash)
         {
-            TrieNode node = _committedNodes.GetNode(rootHash, storagePrefix.ToArray().Concat(nodePath.ToArray()).ToArray());
-            if (node is null)
+            return new TrieNode(NodeType.Unknown, path: nodePath)
             {
-                return new TrieNode(NodeType.Unknown, path: nodePath)
-                {
-                    StoreNibblePathPrefix = storagePrefix.ToArray()
-                };
-            }
-            return node.FullRlp is null ? null : node;
+                StoreNibblePathPrefix = storagePrefix.ToArray()
+            };
         }
 
         //public void Dump() => _dirtyNodes.Dump();
@@ -400,7 +362,6 @@ namespace Nethermind.Trie.Pruning
                 // if (_logger.IsDebug) _logger.Debug($"Persisting from root {commitSet.Root} in {commitSet.BlockNumber}");
 
                 Stopwatch stopwatch = Stopwatch.StartNew();
-                _committedNodes.PersistUntilBlock(persistUntilBlock, _currentBatch);
                 stopwatch.Stop();
                 Metrics.SnapshotPersistenceTime = stopwatch.ElapsedMilliseconds;
 
