@@ -59,7 +59,7 @@ namespace Nethermind.Api
         [ConfigItem(Description = "If set to 'true' then receipts db will be migrated to new schema.", DefaultValue = "false")]
         bool ReceiptsMigration { get; set; }
 
-        [ConfigItem(Description = "If set to 'true' then reduce receipt db size at expense of rpc performance.", DefaultValue = "true")]
+        [ConfigItem(Description = "If set to 'true' then reduce receipt db size at expense of rpc performance.", DefaultValue = "false")]
         bool CompactReceiptStore { get; set; }
 
         [ConfigItem(Description = "Diagnostics modes", DefaultValue = "None")]
