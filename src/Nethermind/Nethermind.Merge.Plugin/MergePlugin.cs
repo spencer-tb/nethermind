@@ -306,9 +306,13 @@ public partial class MergePlugin : IConsensusWrapperPlugin, ISynchronizationPlug
 
             _api.RpcCapabilitiesProvider = new EngineRpcCapabilitiesProvider(_api.SpecProvider);
 
+            BlockInvalidator? blockInvalidator = _api.Config<IInitConfig>().InvalidateBlocks
+                ? new(_api.StateProvider, _api.LogManager)
+                : null;
+
             IEngineRpcModule engineRpcModule = new EngineRpcModule(
-                new GetPayloadV1Handler(payloadPreparationService, _api.LogManager),
-                new GetPayloadV2Handler(payloadPreparationService, _api.LogManager),
+                new GetPayloadV1Handler(payloadPreparationService, _api.LogManager, blockInvalidator),
+                new GetPayloadV2Handler(payloadPreparationService, _api.LogManager, blockInvalidator),
                 new NewPayloadHandler(
                     _api.BlockValidator,
                     _api.BlockTree,

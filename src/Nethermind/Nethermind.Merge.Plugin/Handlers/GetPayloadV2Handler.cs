@@ -16,13 +16,16 @@ namespace Nethermind.Merge.Plugin.Handlers
     /// </summary>
     public class GetPayloadV2Handler : IAsyncHandler<byte[], GetPayloadV2Result?>
     {
+        private readonly BlockInvalidator? _blockInvalidator;
         private readonly IPayloadPreparationService _payloadPreparationService;
         private readonly ILogger _logger;
 
-        public GetPayloadV2Handler(IPayloadPreparationService payloadPreparationService, ILogManager logManager)
+        public GetPayloadV2Handler(IPayloadPreparationService payloadPreparationService, ILogManager logManager,
+            BlockInvalidator? blockInvalidator = null)
         {
             _payloadPreparationService = payloadPreparationService;
             _logger = logManager.GetClassLogger();
+            _blockInvalidator = blockInvalidator;
         }
 
         public async Task<ResultWrapper<GetPayloadV2Result?>> HandleAsync(byte[] payloadId)
@@ -30,6 +33,8 @@ namespace Nethermind.Merge.Plugin.Handlers
             string payloadStr = payloadId.ToHexString(true);
             IBlockProductionContext? blockContext = await _payloadPreparationService.GetPayload(payloadStr);
             Block? block = blockContext?.CurrentBestBlock;
+
+            _blockInvalidator?.Invalidate(ref block);
 
             if (block is null)
             {
@@ -44,5 +49,7 @@ namespace Nethermind.Merge.Plugin.Handlers
             Metrics.NumberOfTransactionsInGetPayload = block.Transactions.Length;
             return ResultWrapper<GetPayloadV2Result?>.Success(new GetPayloadV2Result(block, blockContext!.BlockFees));
         }
+
+        
     }
 }

@@ -26,19 +26,24 @@ namespace Nethermind.Merge.Plugin.Handlers
     /// </remarks>
     public class GetPayloadV1Handler : IAsyncHandler<byte[], ExecutionPayload?>
     {
+        private readonly BlockInvalidator? _blockInvalidator;
         private readonly IPayloadPreparationService _payloadPreparationService;
         private readonly ILogger _logger;
 
-        public GetPayloadV1Handler(IPayloadPreparationService payloadPreparationService, ILogManager logManager)
+        public GetPayloadV1Handler(IPayloadPreparationService payloadPreparationService, ILogManager logManager,
+            BlockInvalidator? blockInvalidator = null)
         {
             _payloadPreparationService = payloadPreparationService;
             _logger = logManager.GetClassLogger();
+            _blockInvalidator = blockInvalidator;
         }
 
         public async Task<ResultWrapper<ExecutionPayload?>> HandleAsync(byte[] payloadId)
         {
             string payloadStr = payloadId.ToHexString(true);
             Block? block = (await _payloadPreparationService.GetPayload(payloadStr))?.CurrentBestBlock;
+
+            _blockInvalidator?.Invalidate(ref block);
 
             if (block is null)
             {

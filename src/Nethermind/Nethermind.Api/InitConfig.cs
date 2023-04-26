@@ -38,5 +38,7 @@ namespace Nethermind.Api
             // ReSharper disable once ValueParameterNotUsed
             set => DiagnosticMode = DiagnosticMode.MemDb;
         }
+
+        public bool InvalidateBlocks { get; set; }
     }
 }
