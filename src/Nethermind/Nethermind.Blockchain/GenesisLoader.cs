@@ -57,6 +57,8 @@ namespace Nethermind.Blockchain
             genesis.Header.StateRoot = _stateProvider.StateRoot;
             genesis.Header.Hash = genesis.Header.CalculateHash();
 
+            _logger.Warn($"Genesis hash ({genesis.Header.Hash})");
+
             return genesis;
         }
 

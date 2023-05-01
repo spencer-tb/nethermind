@@ -22,7 +22,6 @@ namespace Nethermind.AccountAbstraction.Data
             Paymaster = userOperation.Paymaster;
             Signature = userOperation.Signature;
             PaymasterData = userOperation.PaymasterData;
-            ExcessDataGas = userOperation.ExcessDataGas;
         }
 
         public Address Sender { get; set; }
@@ -37,6 +36,5 @@ namespace Nethermind.AccountAbstraction.Data
         public Address Paymaster { get; set; }
         public byte[] Signature { get; set; }
         public byte[] PaymasterData { get; set; }
-        public UInt256 ExcessDataGas { get; set; }
     }
 }

@@ -28,7 +28,6 @@ namespace Nethermind.AccountAbstraction.Data
             Paymaster = userOperationRpc.Paymaster;
             PaymasterData = userOperationRpc.PaymasterData;
             Signature = userOperationRpc.Signature;
-            ExcessDataGas = userOperationRpc.ExcessDataGas;
 
             AccessList = UserOperationAccessList.Empty;
             AddressesToCodeHashes = ImmutableDictionary<Address, Keccak>.Empty;
@@ -59,8 +58,7 @@ namespace Nethermind.AccountAbstraction.Data
             MaxPriorityFeePerGas = MaxPriorityFeePerGas,
             Paymaster = Paymaster!,
             PaymasterData = PaymasterData,
-            Signature = Signature!,
-            ExcessDataGas = ExcessDataGas
+            Signature = Signature!
         };
 
         public Keccak? RequestId { get; set; }
@@ -80,6 +78,5 @@ namespace Nethermind.AccountAbstraction.Data
         public IDictionary<Address, Keccak> AddressesToCodeHashes { get; set; }
         public bool AlreadySimulated { get; set; }
         public bool PassedBaseFee { get; set; } // if the MaxFeePerGas has ever exceeded the basefee
-        public UInt256 ExcessDataGas { get; set; }
     }
 }
