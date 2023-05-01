@@ -29,8 +29,7 @@ namespace Nethermind.AccountAbstraction.Test
                 VerificationGas = 1_000_000,
                 PreVerificationGas = 210000,
                 PaymasterData = Bytes.Empty,
-                Signature = Bytes.Empty,
-                ExcessDataGas = 0,
+                Signature = Bytes.Empty
             };
             TestObjectInternal = new UserOperation(rpcOp);
         }
