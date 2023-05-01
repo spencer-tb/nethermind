@@ -76,8 +76,8 @@ namespace Nethermind.AccountAbstraction.Data
                 MaxPriorityFeePerGas = rlpStream.DecodeUInt256(),
                 Paymaster = rlpStream.DecodeAddress() ?? Address.Zero,
                 PaymasterData = rlpStream.DecodeByteArray(),
-                Signature = rlpStream.DecodeByteArray()
-                ExcessDataGas = rlpStream.DecodeUInt256(),
+                Signature = rlpStream.DecodeByteArray(),
+                ExcessDataGas = rlpStream.DecodeUInt256()
             };
 
             Address entryPoint = rlpStream.DecodeAddress() ?? Address.Zero;

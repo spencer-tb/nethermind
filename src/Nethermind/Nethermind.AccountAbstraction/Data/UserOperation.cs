@@ -59,8 +59,8 @@ namespace Nethermind.AccountAbstraction.Data
             MaxPriorityFeePerGas = MaxPriorityFeePerGas,
             Paymaster = Paymaster!,
             PaymasterData = PaymasterData,
-            Signature = Signature!
-            ExcessDataGas = ExcessDataGas;
+            Signature = Signature!,
+            ExcessDataGas = ExcessDataGas
         };
 
         public Keccak? RequestId { get; set; }
