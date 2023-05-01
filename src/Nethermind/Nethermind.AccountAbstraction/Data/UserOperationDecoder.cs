@@ -49,6 +49,7 @@ namespace Nethermind.AccountAbstraction.Data
             stream.Encode(op.Paymaster);
             stream.Encode(op.PaymasterData);
             stream.Encode(op.Signature);
+            stream.Encode(op.ExcessDataGas);
             stream.Encode(entryPoint);
         }
 
@@ -76,6 +77,7 @@ namespace Nethermind.AccountAbstraction.Data
                 Paymaster = rlpStream.DecodeAddress() ?? Address.Zero,
                 PaymasterData = rlpStream.DecodeByteArray(),
                 Signature = rlpStream.DecodeByteArray()
+                ExcessDataGas = rlpStream.DecodeUInt256(),
             };
 
             Address entryPoint = rlpStream.DecodeAddress() ?? Address.Zero;
@@ -106,6 +108,7 @@ namespace Nethermind.AccountAbstraction.Data
                    + Rlp.LengthOf(op.Paymaster)
                    + Rlp.LengthOf(op.PaymasterData)
                    + Rlp.LengthOf(op.Signature)
+                   + Rlp.LengthOf(op.ExcessDataGas)
                    + Rlp.LengthOf(entryPoint);
         }
 
