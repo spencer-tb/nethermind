@@ -15,6 +15,7 @@ using Nethermind.Evm.Tracing;
 using Nethermind.Evm.TransactionProcessing;
 using Nethermind.Specs.ChainSpecStyle;
 using Nethermind.State;
+using Nethermind.Logging;
 
 namespace Nethermind.Blockchain
 {
@@ -25,6 +26,7 @@ namespace Nethermind.Blockchain
         private readonly IStateProvider _stateProvider;
         private readonly IStorageProvider _storageProvider;
         private readonly ITransactionProcessor _transactionProcessor;
+        protected readonly ILogger _logger;
 
         public GenesisLoader(
             ChainSpec chainSpec,
