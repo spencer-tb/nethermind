@@ -387,6 +387,7 @@ public class ChainSpecLoader : IChainSpecLoader
         {
             genesisHeader.BlobGasUsed = chainSpecJson.Genesis.BlobGasUsed;
             genesisHeader.ExcessBlobGas = chainSpecJson.Genesis.ExcessBlobGas;
+            genesisHeader.ParentBeaconBlockRoot = chainSpecJson.Genesis.ParentBeaconBlockRoot;
         }
 
         genesisHeader.AuRaStep = step;
