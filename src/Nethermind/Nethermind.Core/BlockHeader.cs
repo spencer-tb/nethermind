@@ -37,9 +37,9 @@ public class BlockHeader
         GasLimit = gasLimit;
         Timestamp = timestamp;
         ExtraData = extraData;
-        ParentBeaconBlockRoot = parentBeaconBlockRoot;
         BlobGasUsed = blobGasUsed;
         ExcessBlobGas = excessBlobGas;
+        ParentBeaconBlockRoot = parentBeaconBlockRoot;
     }
 
     public WeakReference<BlockHeader>? MaybeParent { get; set; }

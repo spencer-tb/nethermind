@@ -60,6 +60,7 @@ public class BlockForRpc
             {
                 BlobGasUsed = block.Header.BlobGasUsed;
                 ExcessBlobGas = block.Header.ExcessBlobGas;
+                ParentBeaconBlockRoot = block.ParentBeaconBlockRoot;
             }
         }
 
@@ -76,7 +77,6 @@ public class BlockForRpc
         Uncles = block.Uncles.Select(o => o.Hash);
         Withdrawals = block.Withdrawals;
         WithdrawalsRoot = block.Header.WithdrawalsRoot;
-        ParentBeaconBlockRoot = block.ParentBeaconBlockRoot;
     }
 
     public Address Author { get; set; }
