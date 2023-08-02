@@ -15,6 +15,7 @@ using Nethermind.Evm.Tracing;
 using Nethermind.Evm.TransactionProcessing;
 using Nethermind.Specs.ChainSpecStyle;
 using Nethermind.State;
+using Nethermind.Consensus.BeaconBlockRoot;
 
 namespace Nethermind.Blockchain
 {
@@ -41,10 +42,11 @@ namespace Nethermind.Blockchain
         {
             Block genesis = _chainSpec.Genesis;
             Preallocate(genesis);
+            new BeaconBlockRootHandler()?.HandleBeaconBlockRoot(genesis, _specProvider.GenesisSpec, _stateProvider);
 
             // we no longer need the allocations - 0.5MB RAM, 9000 objects for mainnet
             _chainSpec.Allocations = null;
-
+            
             _stateProvider.Commit(_specProvider.GenesisSpec, true);
 
             _stateProvider.CommitTree(0);
