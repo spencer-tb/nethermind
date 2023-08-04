@@ -77,13 +77,13 @@ namespace Nethermind.Consensus.Producers
 
                 if (blobGasPrice.IsZero)
                 {
-                    ulong? excessDataGas = BlobGasCalculator.CalculateExcessBlobGas(parent, _specProvider.GetSpec(parent));
-                    if (excessDataGas is null)
+                    ulong? excessBlobGas = BlobGasCalculator.CalculateExcessBlobGas(parent, _specProvider.GetSpec(parent));
+                    if (excessBlobGas is null)
                     {
-                        if (_logger.IsTrace) _logger.Trace($"Declining {blobTx.ToShortString()}, the specification is not configured to handle shard blob transactions.");
+                        if (_logger.IsTrace) _logger.Trac$"Declining {blobTx.ToShortString()}, the specification is not configured to handle shard blob transactions.");
                         continue;
                     }
-                    if (!BlobGasCalculator.TryCalculateBlobGasPricePerUnit(excessDataGas.Value, out blobGasPrice))
+                    if (!BlobGasCalculator.TryCalculateBlobGasPricePerUnit(excessBlobGas.Value, out blobGasPrice))
                     {
                         if (_logger.IsTrace) _logger.Trace($"Declining {blobTx.ToShortString()}, failed to calculate data gas price.");
                         continue;
