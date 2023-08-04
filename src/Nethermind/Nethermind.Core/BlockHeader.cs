@@ -100,21 +100,21 @@ public class BlockHeader
         builder.AppendLine($"{indent}Receipts Root: {ReceiptsRoot}");
         builder.AppendLine($"{indent}State Root: {StateRoot}");
         builder.AppendLine($"{indent}BaseFeePerGas: {BaseFeePerGas}");
+        builder.AppendLine($"{indent}IsPostMerge: {IsPostMerge}");
+        builder.AppendLine($"{indent}TotalDifficulty: {TotalDifficulty}");
         if (WithdrawalsRoot is not null)
         {
             builder.AppendLine($"{indent}WithdrawalsRoot: {WithdrawalsRoot}");
-        }
-        if (ParentBeaconBlockRoot is not null)
-        {
-            builder.AppendLine($"{indent}ParentBeaconBlockRoot: {ParentBeaconBlockRoot}");
         }
         if (BlobGasUsed is not null || ExcessBlobGas is not null)
         {
             builder.AppendLine($"{indent}BlobGasUsed: {BlobGasUsed}");
             builder.AppendLine($"{indent}ExcessBlobGas: {ExcessBlobGas}");
         }
-        builder.AppendLine($"{indent}IsPostMerge: {IsPostMerge}");
-        builder.AppendLine($"{indent}TotalDifficulty: {TotalDifficulty}");
+        if (ParentBeaconBlockRoot is not null)
+        {
+            builder.AppendLine($"{indent}ParentBeaconBlockRoot: {ParentBeaconBlockRoot}");
+        }
 
         return builder.ToString();
     }

@@ -125,9 +125,9 @@ namespace Nethermind.Merge.Plugin.Test
 
             if (blockRequest is ExecutionPayloadV3 blockRequestV3)
             {
-                blockRequestV3.ParentBeaconBlockRoot = beaconParentBlockRoot;
                 blockRequestV3.BlobGasUsed = blobGasUsed;
                 blockRequestV3.ExcessBlobGas = excessBlobGas;
+                blockRequestV3.ParentBeaconBlockRoot = beaconParentBlockRoot;
             }
 
 
