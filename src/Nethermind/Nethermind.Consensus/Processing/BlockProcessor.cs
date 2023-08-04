@@ -274,7 +274,8 @@ public partial class BlockProcessor : IBlockProcessor
             bh.Timestamp,
             bh.ExtraData,
             bh.BlobGasUsed,
-            bh.ExcessBlobGas)
+            bh.ExcessBlobGas,
+            bh.ParentBeaconBlockRoot)
         {
             Bloom = Bloom.Empty,
             Author = bh.Author,
@@ -289,7 +290,6 @@ public partial class BlockProcessor : IBlockProcessor
             BaseFeePerGas = bh.BaseFeePerGas,
             WithdrawalsRoot = bh.WithdrawalsRoot,
             IsPostMerge = bh.IsPostMerge,
-            ParentBeaconBlockRoot = bh.ParentBeaconBlockRoot,
         };
 
         return suggestedBlock.CreateCopy(headerForProcessing);

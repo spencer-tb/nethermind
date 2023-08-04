@@ -20,9 +20,9 @@ public class ExecutionPayloadV3 : ExecutionPayload
 
     public ExecutionPayloadV3(Block block) : base(block)
     {
-        ParentBeaconBlockRoot = block.ParentBeaconBlockRoot;
         BlobGasUsed = block.BlobGasUsed;
         ExcessBlobGas = block.ExcessBlobGas;
+        ParentBeaconBlockRoot = block.ParentBeaconBlockRoot;
     }
 
     /// <summary>
@@ -52,9 +52,9 @@ public class ExecutionPayloadV3 : ExecutionPayload
             return false;
         }
 
-        block!.Header.ParentBeaconBlockRoot = ParentBeaconBlockRoot;
         block!.Header.BlobGasUsed = BlobGasUsed;
         block!.Header.ExcessBlobGas = ExcessBlobGas;
+        block!.Header.ParentBeaconBlockRoot = ParentBeaconBlockRoot;
         return true;
     }
 
