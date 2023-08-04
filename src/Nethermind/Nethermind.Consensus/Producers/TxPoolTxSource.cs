@@ -80,7 +80,7 @@ namespace Nethermind.Consensus.Producers
                     ulong? excessBlobGas = BlobGasCalculator.CalculateExcessBlobGas(parent, _specProvider.GetSpec(parent));
                     if (excessBlobGas is null)
                     {
-                        if (_logger.IsTrace) _logger.Trac$"Declining {blobTx.ToShortString()}, the specification is not configured to handle shard blob transactions.");
+                        if (_logger.IsTrace) _logger.Trace $"Declining {blobTx.ToShortString()}, the specification is not configured to handle shard blob transactions.");
                         continue;
                     }
                     if (!BlobGasCalculator.TryCalculateBlobGasPricePerUnit(excessBlobGas.Value, out blobGasPrice))
