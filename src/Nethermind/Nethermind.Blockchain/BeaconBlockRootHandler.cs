@@ -27,7 +27,7 @@ public class BeaconBlockRootHandler : IBeaconBlockRootHandler
         {
             parentBeaconBlockRoot = Keccak.Zero;
         }
-        stateProvider.CreateAccountIfNotExists(BeaconBlockRootPrecompile.Address, 0);
+        // stateProvider.CreateAccountIfNotExists(BeaconBlockRootPrecompile.Address, 0);
 
         UInt256.Mod(timestamp, HISTORICAL_ROOTS_LENGTH, out UInt256 timestampReduced);
         UInt256 rootIndex = timestampReduced + HISTORICAL_ROOTS_LENGTH;
