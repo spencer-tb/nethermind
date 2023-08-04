@@ -229,13 +229,13 @@ public partial class BlockProcessor : IBlockProcessor
         _receiptsTracer.SetOtherTracer(blockTracer);
         _receiptsTracer.StartNewBlockTrace(block);
 
-        _beaconBlockRootHandler.HandleBeaconBlockRoot(block, spec, _stateProvider);
 
         TxReceipt[] receipts = _blockTransactionsExecutor.ProcessTransactions(block, options, _receiptsTracer, spec);
 
         if (spec.IsEip4844Enabled)
         {
             block.Header.BlobGasUsed = BlobGasCalculator.CalculateBlobGas(block.Transactions);
+            _beaconBlockRootHandler.HandleBeaconBlockRoot(block, spec, _stateProvider);
         }
 
         block.Header.ReceiptsRoot = receipts.GetReceiptsRoot(spec, block.ReceiptsRoot);
