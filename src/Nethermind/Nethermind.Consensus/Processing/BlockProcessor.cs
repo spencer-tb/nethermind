@@ -225,6 +225,7 @@ public partial class BlockProcessor : IBlockProcessor
         ProcessingOptions options)
     {
         IReleaseSpec spec = _specProvider.GetSpec(block.Header);
+        _beaconBlockRootHandler.HandleBeaconBlockRoot(block, spec, _stateProvider);
 
         _receiptsTracer.SetOtherTracer(blockTracer);
         _receiptsTracer.StartNewBlockTrace(block);
@@ -235,7 +236,6 @@ public partial class BlockProcessor : IBlockProcessor
         if (spec.IsEip4844Enabled)
         {
             block.Header.BlobGasUsed = BlobGasCalculator.CalculateBlobGas(block.Transactions);
-            _beaconBlockRootHandler.HandleBeaconBlockRoot(block, spec, _stateProvider);
         }
 
         block.Header.ReceiptsRoot = receipts.GetReceiptsRoot(spec, block.ReceiptsRoot);
