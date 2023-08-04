@@ -23,11 +23,11 @@ public class BeaconBlockRootHandler : IBeaconBlockRootHandler
 
         var timestamp = (UInt256)block.Timestamp;
         var parentBeaconBlockRoot = block.ParentBeaconBlockRoot;
-        if(block.IsGenesis && parentBeaconBlockRoot is null)
+        if (block.IsGenesis && parentBeaconBlockRoot is null)
         {
             parentBeaconBlockRoot = Keccak.Zero;
         }
-        stateProvider.CreateAccountIfNotExists(BeaconBlockRootPrecompile.Address, 1);
+        stateProvider.CreateAccountIfNotExists(BeaconBlockRootPrecompile.Address, 0);
 
         UInt256.Mod(timestamp, HISTORICAL_ROOTS_LENGTH, out UInt256 timestampReduced);
         UInt256 rootIndex = timestampReduced + HISTORICAL_ROOTS_LENGTH;
