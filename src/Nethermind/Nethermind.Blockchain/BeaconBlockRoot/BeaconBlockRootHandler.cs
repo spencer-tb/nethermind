@@ -28,5 +28,8 @@ public class BeaconBlockRootHandler : IBeaconBlockRootHandler
 
         stateProvider.Set(tsStorageCell, timestamp.ToBigEndian());
         stateProvider.Set(brStorageCell, parentBeaconBlockRoot.Bytes.ToArray());
+
+        stateProvider.Commit(spec);
+        stateProvider.RecalculateStateRoot();
     }
 }
