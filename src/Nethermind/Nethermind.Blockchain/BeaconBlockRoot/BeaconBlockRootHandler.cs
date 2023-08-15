@@ -25,8 +25,8 @@ public class BeaconBlockRootHandler : IBeaconBlockRootHandler
         StorageCell tsStorageCell = new(BeaconBlockRootPrecompile.Address, timestampReduced);
         StorageCell brStorageCell = new(BeaconBlockRootPrecompile.Address, rootIndex);
 
-        stateProvider.Set(tsStorageCell, timestamp.ToBigEndian().WithoutLeadingZeros().ToArray());
-        stateProvider.Set(brStorageCell, parentBeaconBlockRoot.Bytes.WithoutLeadingZeros().ToArray());
+        stateProvider.Set(tsStorageCell, timestamp.ToBigEndian());
+        stateProvider.Set(brStorageCell, parentBeaconBlockRoot.Bytes.ToArray());
 
     }
 }
