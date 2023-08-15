@@ -12,18 +12,9 @@ using Nethermind.Core.Crypto;
 namespace Nethermind.Consensus.BeaconBlockRoot;
 public class BeaconBlockRootHandler : IBeaconBlockRootHandler
 {
-    public static Address SystemUser { get; } = new("0xfffffffffffffffffffffffffffffffffffffffe");
-
     public void InitStatefulPrecompiles(Block block, IReleaseSpec spec, IWorldState stateProvider)
     {
         if (!spec.IsBeaconBlockRootAvailable) return;
-
-        stateProvider.CreateAccountIfNotExists(SystemUser, 0, 1);
-
-        if (block.Header.ParentBeaconBlockRoot is null)
-        {
-            return;
-        }
 
         UInt256 timestamp = (UInt256)block.Timestamp;
         Keccak parentBeaconBlockRoot = block.ParentBeaconBlockRoot;
@@ -36,5 +27,8 @@ public class BeaconBlockRootHandler : IBeaconBlockRootHandler
 
         stateProvider.Set(tsStorageCell, timestamp.ToBigEndian());
         stateProvider.Set(brStorageCell, parentBeaconBlockRoot.Bytes.ToArray());
+
+        stateProvider.Commit(spec);
+        stateProvider.RecalculateStateRoot();
     }
 }
