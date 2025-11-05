@@ -312,7 +312,37 @@ namespace Nethermind.Specs.ChainSpecStyle
                     return;
                 }
 
-                BlobScheduleSettings? blobSchedule = chainSpec.Parameters.BlobSchedule?.OrderByDescending(bs => bs).FirstOrDefault(bs => bs.Timestamp <= releaseStartTimestamp);
+                // Check forks in reverse chronological order (newest first) to handle cases where
+                // multiple forks activate at the same timestamp. This ensures the most recent fork's
+                // blob parameters take precedence over older BPO (Blob Parameter Only) forks.
+                List<ulong?> forkTimestampsInOrder = new()
+                {
+                    // Add future forks here as they are defined, in reverse chronological order
+                    chainSpec.Parameters.Eip7928TransitionTimestamp,  // Amsterdam
+                    // Osaka/Prague don't change blob params from Cancun defaults, handled by else clause
+                };
+
+                BlobScheduleSettings? blobSchedule = null;
+
+                // Find the blob schedule entry matching the newest active fork
+                foreach (var forkTimestamp in forkTimestampsInOrder)
+                {
+                    if (forkTimestamp.HasValue && forkTimestamp.Value <= releaseStartTimestamp)
+                    {
+                        blobSchedule = chainSpec.Parameters.BlobSchedule?
+                            .FirstOrDefault(bs => bs.Timestamp == forkTimestamp.Value);
+                        if (blobSchedule is not null)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                // If no fork-specific blob schedule found, fall back to generic timestamp-based selection
+                if (blobSchedule is null)
+                {
+                    blobSchedule = chainSpec.Parameters.BlobSchedule?.OrderByDescending(bs => bs).FirstOrDefault(bs => bs.Timestamp <= releaseStartTimestamp);
+                }
 
                 if (blobSchedule is not null)
                 {
