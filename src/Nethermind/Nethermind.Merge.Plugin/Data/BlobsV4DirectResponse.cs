@@ -114,43 +114,39 @@ public sealed class BlobsV4DirectResponse : IStreamableResult, IReadOnlyList<Blo
                 return;
             }
 
-            writer.Write("{\"available\":true,\"blobCells\":["u8);
+            // Engine API `BlobCellsAndProofsV1`: compact `blob_cells` /
+            // `proofs` holding only the requested cells in ascending
+            // cell-index order (geth parity); the positional in-memory
+            // layout is kept for the SSZ codec.
+            writer.Write("{\"blob_cells\":["u8);
 
             byte[]?[]? blobCells = item.BlobCells;
+            bool first = true;
             if (blobCells is not null)
             {
                 for (int c = 0; c < Ckzg.CellsPerExtBlob; c++)
                 {
-                    if (c > 0) writer.Write(","u8);
                     byte[]? cell = blobCells[c];
-                    if (cell is null)
-                    {
-                        writer.Write("null"u8);
-                    }
-                    else
-                    {
-                        HexWriter.WriteHexString(writer, cell.AsSpan(0, Ckzg.BytesPerCell), chunked: true);
-                    }
+                    if (cell is null) continue;
+                    if (!first) writer.Write(","u8);
+                    first = false;
+                    HexWriter.WriteHexString(writer, cell.AsSpan(0, Ckzg.BytesPerCell), chunked: true);
                 }
             }
 
             writer.Write("],\"proofs\":["u8);
 
             byte[]?[]? proofs = item.Proofs;
+            first = true;
             if (proofs is not null)
             {
                 for (int p = 0; p < Ckzg.CellsPerExtBlob; p++)
                 {
-                    if (p > 0) writer.Write(","u8);
                     byte[]? proof = proofs[p];
-                    if (proof is null)
-                    {
-                        writer.Write("null"u8);
-                    }
-                    else
-                    {
-                        HexWriter.WriteHexString(writer, proof.AsSpan(0, Ckzg.BytesPerProof), chunked: false);
-                    }
+                    if (proof is null) continue;
+                    if (!first) writer.Write(","u8);
+                    first = false;
+                    HexWriter.WriteHexString(writer, proof.AsSpan(0, Ckzg.BytesPerProof), chunked: false);
                 }
             }
 

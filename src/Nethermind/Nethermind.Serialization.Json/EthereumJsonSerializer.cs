@@ -121,6 +121,7 @@ namespace Nethermind.Serialization.Json
                     new DoubleConverter(),
                     new DoubleArrayConverter(),
                     new BooleanConverter(),
+                    new BitArrayConverter(),
                     new AddressConverter(strictHexFormat),
                     new AddressAsKeyConverter(),
                     new MemoryByteConverter(),
