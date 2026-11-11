@@ -2144,9 +2144,10 @@ public class EthSimulateTestsBlocksAndTransactions
     /// <summary>
     /// Regression test for #12692: under EIP-7928 the block-access-list path must enforce the
     /// <c>JsonRpc.GasCap</c> budget across the calls of a request. The clamp to the running
-    /// <c>TotalGasLeft</c> lives in the simulate adapter, so with a tight cap the second call is
+    /// <c>TotalGasLeft</c> lives in the simulate adapter, so with a tight cap the second call's default gas is
     /// clamped below intrinsic gas and rejected. Without the adapter the cap is ignored and both
-    /// calls run with their full requested gas.
+    /// calls run with the block's gas. Calls that omit their gas keep the cap as their budget, while a gas the
+    /// call sets may go past it up to the block gas limit.
     /// </summary>
     [Test]
     public async Task eth_simulateV1_enforces_gas_cap_across_calls_on_bal_path()
@@ -2154,9 +2155,9 @@ public class EthSimulateTestsBlocksAndTransactions
         TestRpcBlockchain chain = await BuildAmsterdamBalChain();
 
         // Under Amsterdam (EIP-2780) the intrinsic for this value-free transfer is TX_BASE_COST 12000 +
-        // cold-account 2600 = 14600. With GasCap 20000 the first call leaves 5400 < 14600, so the second
-        // call — clamped to the remaining budget — is rejected below intrinsic. (Pinned so a reprice that
-        // pushes two calls under the cap can't silently make this pass without exercising the clamp.)
+        // cold-account 2600 = 14600. With GasCap 20000 the first call defaults to the cap and leaves 5400 < 14600,
+        // so the second call — clamped to the remaining budget — is rejected below intrinsic. (Pinned so a reprice
+        // that pushes two calls under the cap can't silently make this pass without exercising the clamp.)
         SimulatePayload<TransactionForRpc> payload = new()
         {
             BlockStateCalls =
@@ -2169,8 +2170,8 @@ public class EthSimulateTestsBlocksAndTransactions
                     },
                     Calls =
                     [
-                        new LegacyTransactionForRpc { From = TestItem.AddressA, To = TestItem.AddressB, Value = 0, Gas = 20_000, GasPrice = UInt256.Zero },
-                        new LegacyTransactionForRpc { From = TestItem.AddressA, To = TestItem.AddressB, Value = 0, Gas = 20_000, GasPrice = UInt256.Zero }
+                        new LegacyTransactionForRpc { From = TestItem.AddressA, To = TestItem.AddressB, Value = 0, GasPrice = UInt256.Zero },
+                        new LegacyTransactionForRpc { From = TestItem.AddressA, To = TestItem.AddressB, Value = 0, GasPrice = UInt256.Zero }
                     ]
                 }
             ],
@@ -2451,6 +2452,54 @@ public class EthSimulateTestsBlocksAndTransactions
             chain.EthRpcModule.eth_simulateV1(payload, BlockParameter.Latest);
 
         Assert.That(result.ErrorCode, Is.EqualTo(ErrorCodes.BlockGasLimitReached));
+    }
+
+    /// <summary>
+    /// A transaction that fits in the block can be included, so a call that sets its gas is never capped below the
+    /// gas limit of the requested block, while a call that omits it keeps the RPC gas cap as its default.
+    /// </summary>
+    [Test]
+    public async Task eth_simulateV1_gas_cap_is_never_below_the_block_gas_limit_for_a_call_that_sets_its_gas([Values] bool validation)
+    {
+        using TestRpcBlockchain chain = await EthRpcSimulateTestsBase.CreateChain();
+        ulong blockGasLimit = chain.BlockTree.FindHeadBlock()!.Header.GasLimit;
+        ulong gasCap = blockGasLimit / 4;
+        chain.RpcConfig.GasCap = gasCap;
+        Address needsGas = new("0x000000000000000000000000000000000000c0de");
+        SimulatePayload<TransactionForRpc> payload = new()
+        {
+            BlockStateCalls =
+            [
+                new()
+                {
+                    BlockOverrides = new BlockOverride { BaseFeePerGas = 0 },
+                    StateOverrides = new Dictionary<Address, AccountOverride>
+                    {
+                        { needsGas, new AccountOverride { Code = Bytes.FromHexString(EthRpcSimulateTestsBase.NeedsGasCode(blockGasLimit / 2)) } },
+                        { EthRpcSimulateTestsBase.GasProbeContractAddress, new AccountOverride { Code = Bytes.FromHexString(EthRpcSimulateTestsBase.GasProbeBytecode) } }
+                    },
+                    Calls =
+                    [
+                        new LegacyTransactionForRpc { From = TestItem.AddressA, To = needsGas, Gas = blockGasLimit * 3 / 4, GasPrice = UInt256.Zero },
+                        new LegacyTransactionForRpc { From = TestItem.AddressA, To = EthRpcSimulateTestsBase.GasProbeContractAddress, GasPrice = UInt256.Zero }
+                    ]
+                }
+            ],
+            Validation = validation
+        };
+
+        ResultWrapper<IReadOnlyList<SimulateBlockResult<SimulateCallResult>>> result =
+            chain.EthRpcModule.eth_simulateV1(payload, BlockParameter.Latest);
+
+#pragma warning disable NUnit2045 // The operation must succeed before accessing its result.
+        Assert.That((bool)result.Result, Is.True, result.Result.ToString());
+#pragma warning restore NUnit2045
+        SimulateCallResult[] calls = [.. result.Data![0].Calls];
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(calls[0].Status, Is.EqualTo((ulong)ResultType.Success), "an explicit gas within the block gas limit is not capped");
+            Assert.That(new UInt256(calls[1].ReturnData!, isBigEndian: true), Is.LessThan((UInt256)gasCap), "an omitted gas keeps the cap as its default");
+        }
     }
 
     [Test]

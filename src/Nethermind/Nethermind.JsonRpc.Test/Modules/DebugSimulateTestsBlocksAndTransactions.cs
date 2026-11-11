@@ -62,13 +62,13 @@ public class DebugSimulateTestsBlocksAndTransactions : TracedSimulateTestsBase<G
         Assert.That(gasAvailable, Is.GreaterThan(UInt256.Zero));
     }
 
-    /// <summary>The call tracer reports the gas the call runs with, after the RPC gas cap clamps the requested gas.</summary>
+    /// <summary>The call tracer reports the gas the call runs with, after the RPC gas cap clamps the default gas.</summary>
     [Test]
     public async Task Test_debug_simulate_call_tracer_reports_the_gas_capped_gas([Values] bool validation)
     {
         using TestRpcBlockchain chain = await EthRpcSimulateTestsBase.CreateChain();
         chain.Container.Resolve<IJsonRpcConfig>().GasCap = 30_000;
-        SimulatePayload<TransactionForRpc> payload = EthRpcSimulateTestsBase.CreateGasProbePayload(50_000);
+        SimulatePayload<TransactionForRpc> payload = EthRpcSimulateTestsBase.CreateGasProbePayload();
         payload.BlockStateCalls![0].BlockOverrides = new BlockOverride { GasLimit = 100_000, BaseFeePerGas = 0 };
         payload.Validation = validation;
 

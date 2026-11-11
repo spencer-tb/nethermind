@@ -1624,6 +1624,57 @@ public class BlockchainBridgeTests
         }
     }
 
+    // A call that sets its gas may draw on the budget raised to the block gas limit, while a call that omits it keeps
+    // the RPC gas cap as its budget, and every call depletes both.
+    [Test]
+    public void Simulate_adapter_lets_a_call_that_sets_its_gas_go_past_the_gas_cap()
+    {
+        SimulateRequestState simulateRequestState = new()
+        {
+            TotalGasLeft = 100_000,
+            RaisedGasLeft = 500_000,
+            BlockGasLeft = 1_000_000,
+            BlockStateGasLeft = 1_000_000,
+            Validate = false,
+        };
+        simulateRequestState.Calls =
+            [
+                new() { HadGasLimitInRequest = true, MayExceedGasCap = true, Transaction = new Transaction() },
+                new() { HadGasLimitInRequest = true, Transaction = new Transaction() },
+                new() { HadGasLimitInRequest = false, Transaction = new Transaction() }
+            ];
+
+        List<ulong> executedGasLimits = [];
+        ITransactionProcessor processor = Substitute.For<ITransactionProcessor>();
+        processor.Trace(Arg.Any<Transaction>(), Arg.Any<ITxTracer>())
+            .Returns(ci =>
+            {
+                Transaction tx = ci.Arg<Transaction>();
+                executedGasLimits.Add(tx.GasLimit);
+                tx.SpentGas = 30_000;
+                tx.BlockGasUsed = 30_000;
+                GasConsumed gasConsumed = new(30_000, 30_000, 30_000);
+                ci.Arg<ITxTracer>().MarkAsSuccess(Address.Zero, gasConsumed, [], []);
+                return TransactionResult.Ok;
+            });
+
+        SimulateTransactionProcessorAdapter adapter = new(processor, simulateRequestState);
+        Transaction aboveCap = new() { GasLimit = 300_000 };
+        Transaction cappedExplicit = new() { GasLimit = 300_000 };
+        Transaction omitted = new() { GasLimit = 300_000 };
+        using BlockReceiptsTracer receiptsTracer = CreateReceiptsTracer(aboveCap, cappedExplicit, omitted);
+        ExecuteWithReceiptsTracer(adapter, receiptsTracer, aboveCap);
+        ExecuteWithReceiptsTracer(adapter, receiptsTracer, cappedExplicit);
+        ExecuteWithReceiptsTracer(adapter, receiptsTracer, omitted);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(executedGasLimits, Is.EqualTo(new ulong[] { 300_000, 70_000, 40_000 }));
+            Assert.That(simulateRequestState.TotalGasLeft, Is.EqualTo(10_000));
+            Assert.That(simulateRequestState.RaisedGasLeft, Is.EqualTo(410_000));
+        }
+    }
+
     private static BlockReceiptsTracer CreateReceiptsTracer(params Transaction[] transactions)
     {
         BlockReceiptsTracer receiptsTracer = new();

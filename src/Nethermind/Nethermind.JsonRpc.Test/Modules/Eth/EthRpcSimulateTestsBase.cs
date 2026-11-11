@@ -69,7 +69,8 @@ public class EthRpcSimulateTestsBase
 
     public static IEnumerable<TestCaseData> GasCapSimulateCases()
     {
-        yield return new TestCaseData(50_000UL, 100_000UL, true).SetName("capped");
+        // A call that sets its gas is never capped below the block gas limit, so only a default gas is capped.
+        yield return new TestCaseData(50_000UL, (ulong?)null, true).SetName("capped");
         yield return new TestCaseData(0UL, (ulong?)null, false).SetName("uncapped_zero_cap");
     }
 
