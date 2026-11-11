@@ -2024,6 +2024,79 @@ public partial class EthRpcModuleTests
         Assert.That(serialized, Does.Contain("\"result\":\"0x"), serialized);
     }
 
+    // Loops 3000 times, about 78,000 gas: PUSH2 3000 JUMPDEST PUSH1 1 SWAP1 SUB DUP1 PUSH1 3 JUMPI STOP
+    private const string BurnerCode = "0x610bb85b600190038060035700";
+
+    /// <summary>
+    /// The code of a contract that calls <paramref name="callee"/> with <paramref name="gas"/> gas, or with all its gas
+    /// left when null, and returns whether the call succeeded:
+    /// PUSH1 0 x5 PUSH20 callee (GAS | PUSH2 gas) CALL PUSH1 0 MSTORE PUSH1 32 PUSH1 0 RETURN.
+    /// </summary>
+    private static string CatcherCode(Address callee, ushort? gas = null) =>
+        $"0x6000600060006000600073{callee.ToString(false, false)}{(gas is { } limit ? $"61{limit:x4}" : "5a")}f160005260206000f3";
+
+    /// <summary>
+    /// A gas limit at which a nested call runs out of gas and its caller catches the failure is not sufficient, while a
+    /// nested call that fails at every gas limit leaves the estimate alone.
+    /// </summary>
+    [Test]
+    public async Task Estimate_gas_does_not_starve_a_caught_nested_call()
+    {
+        using Context ctx = await Context.Create();
+        Address burner = new("0x000000000000000000000000000000000000b001");
+        Address catcher = new("0x000000000000000000000000000000000000ca01");
+        Address prober = new("0x000000000000000000000000000000000000ca02");
+        object stateOverride = JsonSerializer.Deserialize<object>(
+            $$$"""{"{{{burner}}}":{"code":"{{{BurnerCode}}}"},"{{{catcher}}}":{"code":"{{{CatcherCode(burner)}}}"},"{{{prober}}}":{"code":"{{{CatcherCode(burner, 1_000)}}}"}}""")!;
+
+        // The estimate must leave the burner enough gas to finish.
+        ulong catcherGas = await EstimateGas(ctx, catcher, stateOverride);
+        object call = JsonSerializer.Deserialize<object>($$"""{"from":"{{TestItem.AddressA}}","to":"{{catcher}}","gas":"0x{{catcherGas:x}}"}""")!;
+        string callResponse = await ctx.Test.TestEthRpc("eth_call", call, "latest", stateOverride);
+
+        // A nested call that runs out of gas at every limit must not inflate the estimate.
+        ulong proberGas = await EstimateGas(ctx, prober, stateOverride);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(JToken.Parse(callResponse)["result"]?.Value<string>(), Is.EqualTo(Bytes.FromHexString("0x01").PadLeft(32).ToHexString(true)), $"nested call fails at the estimate {catcherGas}: {callResponse}");
+            Assert.That(proberGas, Is.LessThanOrEqualTo(100_000ul), "estimate inflated by a nested call that always fails");
+        }
+    }
+
+    /// <summary>
+    /// After EIP-8037, gas above TX_MAX_GAS_LIMIT only funds the state gas reservoir, so a nested call that completes
+    /// only with a reservoir does not push the estimate past the cap.
+    /// </summary>
+    [Test]
+    public async Task Estimate_gas_after_eip8037_does_not_pass_the_cap_to_fund_a_nested_call_from_the_reservoir()
+    {
+        using Context ctx = await Context.CreateWithAmsterdamEnabled();
+        Address storer = new("0x000000000000000000000000000000000000b002");
+        Address catcher = new("0x000000000000000000000000000000000000ca03");
+        // The storer sets a fresh slot: PUSH1 1 PUSH1 0 SSTORE STOP. The catcher gives it 30,000 gas, too little for
+        // the new slot's state gas unless a reservoir pays it.
+        object stateOverride = JsonSerializer.Deserialize<object>(
+            $$$"""{"{{{storer}}}":{"code":"0x600160005500"},"{{{catcher}}}":{"code":"{{{CatcherCode(storer, 30_000)}}}"}}""")!;
+
+        // The request gas puts the highest gas limit above the cap, where the reservoir funds the slot.
+        ulong gas = await EstimateGas(ctx, catcher, stateOverride, gas: 50_000_000);
+
+        Assert.That(gas, Is.LessThan(Eip7825Constants.DefaultTxGasLimitCap), "estimate reaches past TX_MAX_GAS_LIMIT to fund the nested call from the reservoir");
+    }
+
+    private static async Task<ulong> EstimateGas(Context ctx, Address to, object stateOverride, ulong? gas = null)
+    {
+        string gasField = gas is { } limit ? $",\"gas\":\"0x{limit:x}\"" : "";
+        object transaction = JsonSerializer.Deserialize<object>($$"""{"from":"{{TestItem.AddressA}}","to":"{{to}}"{{gasField}}}""")!;
+
+        string serialized = await ctx.Test.TestEthRpc("eth_estimateGas", transaction, "latest", stateOverride);
+
+        string? result = JToken.Parse(serialized)["result"]?.Value<string>();
+        Assert.That(result, Is.Not.Null, serialized);
+        return Convert.ToUInt64(result, 16);
+    }
+
     private static object FrameTargetCode(FrameTransactionForRpc request, string code) =>
         JsonSerializer.Deserialize<object>($$$"""{"{{{request.Frames![1].Target}}}":{"code":"{{{code}}}"}}""")!;
 }
