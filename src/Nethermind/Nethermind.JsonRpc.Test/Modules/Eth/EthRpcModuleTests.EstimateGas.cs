@@ -1759,6 +1759,32 @@ public partial class EthRpcModuleTests
     }
 
     /// <summary>
+    /// From Amsterdam a request gas counts as set from EIP-2780's base cost, so it bounds the estimate of a transfer that
+    /// needs more and the estimate fails, while a request gas below the base cost is ignored.
+    /// </summary>
+    [Test]
+    public async Task Eth_estimateGas_request_gas_counts_from_the_eip2780_base_cost()
+    {
+        using Context ctx = await Context.Create(new TestSpecProvider(Amsterdam.Instance));
+        // Zero-value transfer to an existing EOA: TX_BASE_COST + COLD_ACCOUNT_ACCESS.
+        const ulong transferGas = GasCostOf.TransactionEip2780 + Eip8038Constants.ColdAccountAccess;
+        const ulong boundingGas = transferGas - 1_000;
+        const ulong ignoredGas = GasCostOf.TransactionEip2780 - 1;
+
+        string bounded = await ctx.Test.TestEthRpc("eth_estimateGas", TransferRequest(boundingGas));
+        string ignored = await ctx.Test.TestEthRpc("eth_estimateGas", TransferRequest(ignoredGas));
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(JToken.Parse(bounded)["error"]?["message"]?.Value<string>(), Is.EqualTo($"{GasEstimator.GasExceedsAllowanceMsgPrefix} ({boundingGas})"), bounded);
+            Assert.That(JToken.Parse(ignored)["result"]?.Value<string>(), Is.EqualTo(transferGas.ToHexString(true)), ignored);
+        }
+
+        static object TransferRequest(ulong gas) =>
+            JsonSerializer.Deserialize<object>($$"""{"from":"{{TestItem.AddressA}}","to":"{{TestItem.AddressB}}","gas":"0x{{gas:x}}"}""")!;
+    }
+
+    /// <summary>
     /// After EIP-8037 the highest gas limit is at most TX_MAX_TOTAL_GAS_LIMIT, so a request gas above it is lowered to
     /// it rather than failing the run at the top of the search, when no RPC gas cap lowers it first.
     /// </summary>

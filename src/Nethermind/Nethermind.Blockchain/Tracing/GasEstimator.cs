@@ -63,7 +63,9 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
         if (tx.SupportsFrames)
             return EstimateFrameTx(tx, header, spec, gasCap);
 
-        ulong hi = tx.GasLimit >= GasCostOf.Transaction ? tx.GasLimit : header.GasLimit;
+        // A request gas counts as set from the fork's lowest transaction cost, EIP-2780's base cost from Amsterdam.
+        ulong lowestTxCost = spec.IsEip2780Enabled ? GasCostOf.TransactionEip2780 : GasCostOf.Transaction;
+        ulong hi = tx.GasLimit >= lowestTxCost ? tx.GasLimit : header.GasLimit;
 
         // EIP-7825 caps the gas of a single transaction until EIP-8037 lifts the cap to both gas dimensions, which it
         // caps together at TX_MAX_TOTAL_GAS_LIMIT.
@@ -100,10 +102,11 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
 
         Execution execution = new(transactionProcessor, tx, blockContext, token);
 
-        // A plain transfer runs no code and earns no refund, so one run at the base cost is exact when it passes.
+        // A plain transfer runs no code and earns no refund, so one run at the base cost is exact when it passes. It
+        // does not run above the highest gas limit, which a request gas below the base cost can set.
         if (tx.Data.IsEmpty && tx.To is not null && !stateProvider.IsContract(tx.To))
         {
-            Run transfer = execution.Run(GasCostOf.Transaction);
+            Run transfer = execution.Run(Math.Min(hi, GasCostOf.Transaction));
             if (transfer.Status == RunStatus.Succeeded)
                 return GasEstimation.Success(transfer.GasUsed);
         }
