@@ -252,6 +252,33 @@ public class GasEstimatorTests
         Assert.That(processor.GasLimits, Is.EqualTo(new[] { Eip7825Constants.DefaultTxGasLimitCap }), "the probe runs at the EIP-7825 cap");
     }
 
+    [TestCase(Eip8037Constants.TxMaxTotalGasLimit + 1, TestName = "Above the total cap")]
+    [TestCase(2 * Eip8037Constants.TxMaxTotalGasLimit, TestName = "Twice the total cap")]
+    public void Estimate_under_eip8037_caps_the_highest_gas_limit_at_the_total_cap(ulong requestedGas)
+    {
+        ScriptedTransactionProcessor processor = new(gasUsed: 30_000, peakGas: 30_000, requiredGasLimit: ulong.MaxValue);
+        Transaction tx = Build.A.Transaction.WithTo(TestItem.AddressB).WithData(CallData).WithGasLimit(requestedGas).WithGasPrice(0).TestObject;
+
+        GasEstimation estimation = Estimate(processor, tx, CreateStateProvider(UInt256.Zero, isContract: true), spec: Amsterdam.Instance, blockGasLimit: requestedGas);
+
+        Assert.That(processor.GasLimits, Is.EqualTo(new[] { Eip8037Constants.TxMaxTotalGasLimit }), "the probe runs at the EIP-8037 total cap");
+    }
+
+    [Test]
+    public void Estimate_after_eip2780_counts_a_request_gas_from_its_base_cost()
+    {
+        ScriptedTransactionProcessor processor = new(gasUsed: 15_000, peakGas: 15_000, requiredGasLimit: 15_000);
+        Transaction tx = Build.A.Transaction.WithTo(TestItem.AddressB).WithGasLimit(14_000).WithGasPrice(0).TestObject;
+
+        GasEstimation estimation = Estimate(processor, tx, CreateStateProvider(UInt256.Zero, isContract: false), spec: Amsterdam.Instance);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(estimation.Error, Is.EqualTo($"{GasEstimator.GasExceedsAllowanceMsgPrefix} (14000)"), "a request gas from the EIP-2780 base cost bounds the estimate");
+            Assert.That(processor.GasLimits, Has.All.LessThanOrEqualTo(14_000ul), "no run, the plain transfer one included, goes above the request gas");
+        }
+    }
+
     [Test]
     public void Estimate_gas_below_the_base_cost_is_bounded_by_the_block_gas_limit()
     {

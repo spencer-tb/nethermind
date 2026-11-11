@@ -65,8 +65,13 @@ public class SimulateTxExecutor<TTrace>(
                         LegacyTransactionForRpc? asLegacy = callTransactionModel as LegacyTransactionForRpc;
                         bool hadGasLimitInRequest = asLegacy?.Gas is not null;
                         bool hadNonceInRequest = asLegacy?.Nonce is not null;
+                        // A gas the call sets may go past the RPC gas cap up to the gas limit of the block the
+                        // simulation builds on, as a transaction that fits in it can be included. A bundle call keeps
+                        // the cap, and so does a frame transaction, whose cap bounds the work its frames ask for.
+                        bool mayExceedGasCap = hadGasLimitInRequest && !callSemantics && callTransactionModel is not FrameTransactionForRpc;
 
-                        Result<Transaction> txResult = callTransactionModel.ToCallTransaction(spec, _rpcConfig.GasCap,
+                        Result<Transaction> txResult = callTransactionModel.ToCallTransaction(spec,
+                            mayExceedGasCap ? _rpcConfig.GasCap.RaisedToBlockGasLimit(header.GasLimit) : _rpcConfig.GasCap,
                             validateUserInput: call.Validation, validateFeeCapOrder: call.Validation);
                         if (!txResult.Success(out Transaction? tx, out string? error))
                         {
@@ -80,6 +85,7 @@ public class SimulateTxExecutor<TTrace>(
                             HadGasLimitInRequest = hadGasLimitInRequest,
                             // The block checks the gas as requested, before the conversion clamped it to the RPC gas cap.
                             GasLimitToFitBlock = !callSemantics && hadGasLimitInRequest ? asLegacy!.Gas : null,
+                            MayExceedGasCap = mayExceedGasCap,
                             HadNonceInRequest = hadNonceInRequest,
                             Transaction = tx
                         };

@@ -102,9 +102,12 @@ public class SimulateBridgeHelper(IBlocksConfig blocksConfig, ISpecProvider spec
     {
         IBlockTree blockTree = env.BlockTree;
         IWorldState stateProvider = env.WorldState;
-        parent = GetParent(parent, blockTree);
 
+        // A call that sets its gas may go past the RPC gas cap, up to the gas limit of the requested block, which
+        // no block override has changed.
         env.SimulateRequestState.TotalGasLeft = gasCapLimit;
+        env.SimulateRequestState.RaisedGasLeft = Math.Max(gasCapLimit, parent.GasLimit);
+        parent = GetParent(parent, blockTree);
 
         if (payload.BlockStateCalls is not null)
         {

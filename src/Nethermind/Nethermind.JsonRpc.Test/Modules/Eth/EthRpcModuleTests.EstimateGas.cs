@@ -1347,9 +1347,10 @@ public partial class EthRpcModuleTests
         Assert.That(JToken.Parse(serialized)["error"]?["message"]?.Value<string>(), Is.EqualTo("gas required exceeds allowance (100000)"), serialized);
     }
 
-    [TestCase(",\"data\":\"0x01\"", null, "gas required exceeds allowance (20000)", TestName = "Call data")]
-    [TestCase("", "0x5208", null, TestName = "Plain transfer runs at the base cost")]
-    public async Task Estimate_gas_with_a_gas_cap_below_the_base_cost(string dataField, string? expectedResult, string? expectedError)
+    /// <summary>The search reaches the block gas limit, so a gas cap below the base cost does not fail the estimate.</summary>
+    [TestCase(",\"data\":\"0x01\"", null, TestName = "Call data")]
+    [TestCase("", "0x5208", TestName = "Plain transfer runs at the base cost")]
+    public async Task Estimate_gas_with_a_gas_cap_below_the_base_cost(string dataField, string? expectedResult)
     {
         using Context ctx = await Context.Create(new TestSpecProvider(Osaka.Instance));
         ctx.Test.RpcConfig.GasCap = 20_000;
@@ -1359,11 +1360,31 @@ public partial class EthRpcModuleTests
         string serialized = await ctx.Test.TestEthRpc("eth_estimateGas", transaction);
 
         JToken response = JToken.Parse(serialized);
+        string? result = response["result"]?.Value<string>();
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(response["result"]?.Value<string>(), Is.EqualTo(expectedResult), serialized);
-            Assert.That(response["error"]?["message"]?.Value<string>(), Is.EqualTo(expectedError), serialized);
+            Assert.That(response["error"], Is.Null, serialized);
+            if (expectedResult is null)
+                Assert.That(result is null ? 0 : Convert.ToUInt64(result, 16), Is.GreaterThan(GasCostOf.Transaction), serialized);
+            else
+                Assert.That(result, Is.EqualTo(expectedResult), serialized);
         }
+    }
+
+    /// <summary>The search can reach the block gas limit, so a gas cap below it does not fail the estimate.</summary>
+    [Test]
+    public async Task Estimate_gas_search_reaches_the_block_gas_limit_above_the_gas_cap()
+    {
+        using Context ctx = await Context.Create();
+        ulong blockGasLimit = ctx.Test.BlockTree.FindHeadBlock()!.Header.GasLimit;
+        ctx.Test.RpcConfig.GasCap = blockGasLimit / 4;
+        ulong threshold = blockGasLimit / 2;
+        Address needsGas = new("0x000000000000000000000000000000000000c0de");
+        object stateOverride = JsonSerializer.Deserialize<object>($$$"""{"{{{needsGas}}}":{"code":"{{{EthRpcSimulateTestsBase.NeedsGasCode(threshold)}}}"}}""")!;
+
+        ulong gas = await EstimateGas(ctx, needsGas, stateOverride);
+
+        Assert.That(gas, Is.GreaterThanOrEqualTo(threshold).And.LessThanOrEqualTo(blockGasLimit));
     }
 
     [Test]
@@ -1737,6 +1758,50 @@ public partial class EthRpcModuleTests
         Assert.That(serialized, Is.EqualTo($"{{\"jsonrpc\":\"2.0\",\"result\":\"{expected.ToHexString(true)}\",\"id\":67}}"));
     }
 
+    /// <summary>
+    /// From Amsterdam a request gas counts as set from EIP-2780's base cost, so it bounds the estimate of a transfer that
+    /// needs more and the estimate fails, while a request gas below the base cost is ignored.
+    /// </summary>
+    [Test]
+    public async Task Eth_estimateGas_request_gas_counts_from_the_eip2780_base_cost()
+    {
+        using Context ctx = await Context.Create(new TestSpecProvider(Amsterdam.Instance));
+        // Zero-value transfer to an existing EOA: TX_BASE_COST + COLD_ACCOUNT_ACCESS.
+        const ulong transferGas = GasCostOf.TransactionEip2780 + Eip8038Constants.ColdAccountAccess;
+        const ulong boundingGas = transferGas - 1_000;
+        const ulong ignoredGas = GasCostOf.TransactionEip2780 - 1;
+
+        string bounded = await ctx.Test.TestEthRpc("eth_estimateGas", TransferRequest(boundingGas));
+        string ignored = await ctx.Test.TestEthRpc("eth_estimateGas", TransferRequest(ignoredGas));
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(JToken.Parse(bounded)["error"]?["message"]?.Value<string>(), Is.EqualTo($"{GasEstimator.GasExceedsAllowanceMsgPrefix} ({boundingGas})"), bounded);
+            Assert.That(JToken.Parse(ignored)["result"]?.Value<string>(), Is.EqualTo(transferGas.ToHexString(true)), ignored);
+        }
+
+        static object TransferRequest(ulong gas) =>
+            JsonSerializer.Deserialize<object>($$"""{"from":"{{TestItem.AddressA}}","to":"{{TestItem.AddressB}}","gas":"0x{{gas:x}}"}""")!;
+    }
+
+    /// <summary>
+    /// After EIP-8037 the highest gas limit is at most TX_MAX_TOTAL_GAS_LIMIT, so a request gas above it is lowered to
+    /// it rather than failing the run at the top of the search, when no RPC gas cap lowers it first.
+    /// </summary>
+    [TestCase(0UL, TestName = "Eth_estimateGas_lowers_a_request_gas_above_the_eip8037_total_cap(uncapped)")]
+    [TestCase(1_000_000_000_000UL, TestName = "Eth_estimateGas_lowers_a_request_gas_above_the_eip8037_total_cap(above cap)")]
+    public async Task Eth_estimateGas_lowers_a_request_gas_above_the_eip8037_total_cap(ulong gasCap)
+    {
+        using Context ctx = await Context.CreateWithAmsterdamEnabled();
+        ctx.Test.RpcConfig.GasCap = gasCap;
+        object stateOverride = JsonSerializer.Deserialize<object>(
+            $$$"""{"{{{EthRpcSimulateTestsBase.GasProbeContractAddress}}}":{"code":"{{{EthRpcSimulateTestsBase.GasProbeBytecode}}}"}}""")!;
+
+        ulong gas = await EstimateGas(ctx, EthRpcSimulateTestsBase.GasProbeContractAddress, stateOverride, gas: Eip8037Constants.TxMaxTotalGasLimit + 1_000_000);
+
+        Assert.That(gas, Is.LessThan(100_000ul), "a call needing far less than the cap gets an estimate");
+    }
+
     [Test]
     public async Task Eth_estimateGas_value_transfer_creating_account_is_within_the_error_margin()
     {
@@ -2022,6 +2087,111 @@ public partial class EthRpcModuleTests
 
         Assert.That(serialized, Does.Not.Contain("-32603"), serialized);
         Assert.That(serialized, Does.Contain("\"result\":\"0x"), serialized);
+    }
+
+    // Loops 3000 times, about 78,000 gas: PUSH2 3000 JUMPDEST PUSH1 1 SWAP1 SUB DUP1 PUSH1 3 JUMPI STOP
+    private const string BurnerCode = "0x610bb85b600190038060035700";
+
+    /// <summary>
+    /// The code of a contract that calls <paramref name="callee"/> with <paramref name="gas"/> gas, or with all its gas
+    /// left when null, and returns whether the call succeeded:
+    /// PUSH1 0 x5 PUSH20 callee (GAS | PUSH2 gas) CALL PUSH1 0 MSTORE PUSH1 32 PUSH1 0 RETURN.
+    /// </summary>
+    private static string CatcherCode(Address callee, ushort? gas = null) =>
+        $"0x6000600060006000600073{callee.ToString(false, false)}{(gas is { } limit ? $"61{limit:x4}" : "5a")}f160005260206000f3";
+
+    /// <summary>
+    /// A gas limit at which a nested call runs out of gas and its caller catches the failure is not sufficient, while a
+    /// nested call that fails at every gas limit leaves the estimate alone.
+    /// </summary>
+    [Test]
+    public async Task Estimate_gas_does_not_starve_a_caught_nested_call()
+    {
+        using Context ctx = await Context.Create();
+        Address burner = new("0x000000000000000000000000000000000000b001");
+        Address catcher = new("0x000000000000000000000000000000000000ca01");
+        Address prober = new("0x000000000000000000000000000000000000ca02");
+        object stateOverride = JsonSerializer.Deserialize<object>(
+            $$$"""{"{{{burner}}}":{"code":"{{{BurnerCode}}}"},"{{{catcher}}}":{"code":"{{{CatcherCode(burner)}}}"},"{{{prober}}}":{"code":"{{{CatcherCode(burner, 1_000)}}}"}}""")!;
+
+        // The estimate must leave the burner enough gas to finish.
+        ulong catcherGas = await EstimateGas(ctx, catcher, stateOverride);
+        object call = JsonSerializer.Deserialize<object>($$"""{"from":"{{TestItem.AddressA}}","to":"{{catcher}}","gas":"0x{{catcherGas:x}}"}""")!;
+        string callResponse = await ctx.Test.TestEthRpc("eth_call", call, "latest", stateOverride);
+
+        // A nested call that runs out of gas at every limit must not inflate the estimate.
+        ulong proberGas = await EstimateGas(ctx, prober, stateOverride);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(JToken.Parse(callResponse)["result"]?.Value<string>(), Is.EqualTo(Bytes.FromHexString("0x01").PadLeft(32).ToHexString(true)), $"nested call fails at the estimate {catcherGas}: {callResponse}");
+            Assert.That(proberGas, Is.LessThanOrEqualTo(100_000ul), "estimate inflated by a nested call that always fails");
+        }
+    }
+
+    /// <summary>
+    /// After EIP-8037, gas above TX_MAX_GAS_LIMIT only funds the state gas reservoir, so a nested call that completes
+    /// only with a reservoir does not push the estimate past the cap.
+    /// </summary>
+    [Test]
+    public async Task Estimate_gas_after_eip8037_does_not_pass_the_cap_to_fund_a_nested_call_from_the_reservoir()
+    {
+        using Context ctx = await Context.CreateWithAmsterdamEnabled();
+        Address storer = new("0x000000000000000000000000000000000000b002");
+        Address catcher = new("0x000000000000000000000000000000000000ca03");
+        // The storer sets a fresh slot: PUSH1 1 PUSH1 0 SSTORE STOP. The catcher gives it 30,000 gas, too little for
+        // the new slot's state gas unless a reservoir pays it.
+        object stateOverride = JsonSerializer.Deserialize<object>(
+            $$$"""{"{{{storer}}}":{"code":"0x600160005500"},"{{{catcher}}}":{"code":"{{{CatcherCode(storer, 30_000)}}}"}}""")!;
+
+        // The request gas puts the highest gas limit above the cap, where the reservoir funds the slot.
+        ulong gas = await EstimateGas(ctx, catcher, stateOverride, gas: 50_000_000);
+
+        Assert.That(gas, Is.LessThan(Eip7825Constants.DefaultTxGasLimitCap), "estimate reaches past TX_MAX_GAS_LIMIT to fund the nested call from the reservoir");
+    }
+
+    /// <summary>
+    /// After EIP-8037, a limit above TX_MAX_GAS_LIMIT is only sufficient if no more nested calls fail than at the
+    /// highest one, so a deployment that needs a reservoir for two maximum-size creations is not estimated at a limit
+    /// that starves the second.
+    /// </summary>
+    [Test]
+    public async Task Estimate_gas_after_eip8037_does_not_starve_the_second_of_two_creations_funded_by_the_reservoir()
+    {
+        using Context ctx = await Context.CreateWithAmsterdamEnabled();
+        // Creates two contracts of 24,576 zero bytes, about 37.6M state gas each, ignoring whether each succeeded, and
+        // deploys a word that is 1 only when both did:
+        //   PUSH6 (PUSH2 0x6000 PUSH1 0 RETURN) PUSH1 0 MSTORE (PUSH1 6 PUSH1 26 PUSH1 0 CREATE) x2
+        //   ISZERO ISZERO SWAP1 ISZERO ISZERO AND PUSH1 0 MSTORE PUSH1 32 PUSH1 0 RETURN
+        const string initCode = "0x656160006000f36000526006601a6000f06006601a6000f015159015151660005260206000f3";
+        const ulong gasLimit = 100_000_000;
+
+        object estimateRequest = JsonSerializer.Deserialize<object>($$"""{"from":"{{TestItem.AddressA}}","input":"{{initCode}}","gas":"0x{{gasLimit:x}}"}""")!;
+        string estimateResponse = await ctx.Test.TestEthRpc("eth_estimateGas", estimateRequest);
+        string? estimate = JToken.Parse(estimateResponse)["result"]?.Value<string>();
+#pragma warning disable NUnit2045 // The estimate must succeed before it is simulated.
+        Assert.That(estimate, Is.Not.Null, estimateResponse);
+#pragma warning restore NUnit2045
+
+        // Run the deployment at the estimate as a block runs it, with the EIP-8037 gas split.
+        object simulateRequest = JsonSerializer.Deserialize<object>(
+            $$$"""{"blockStateCalls":[{"blockOverrides":{"gasLimit":"0x{{{gasLimit:x}}}","baseFeePerGas":"0x0"},"calls":[{"from":"{{{TestItem.AddressA}}}","input":"{{{initCode}}}","gas":"{{{estimate}}}"}]}],"validation":true}""")!;
+        string simulateResponse = await ctx.Test.TestEthRpc("eth_simulateV1", simulateRequest, "latest");
+
+        JToken? call = JToken.Parse(simulateResponse)["result"]?[0]?["calls"]?[0];
+        Assert.That(call?["returnData"]?.Value<string>(), Is.EqualTo(Bytes.FromHexString("0x01").PadLeft(32).ToHexString(true)), $"a creation fails at the estimate {estimate}: {simulateResponse}");
+    }
+
+    private static async Task<ulong> EstimateGas(Context ctx, Address to, object stateOverride, ulong? gas = null)
+    {
+        string gasField = gas is { } limit ? $",\"gas\":\"0x{limit:x}\"" : "";
+        object transaction = JsonSerializer.Deserialize<object>($$"""{"from":"{{TestItem.AddressA}}","to":"{{to}}"{{gasField}}}""")!;
+
+        string serialized = await ctx.Test.TestEthRpc("eth_estimateGas", transaction, "latest", stateOverride);
+
+        string? result = JToken.Parse(serialized)["result"]?.Value<string>();
+        Assert.That(result, Is.Not.Null, serialized);
+        return Convert.ToUInt64(result, 16);
     }
 
     private static object FrameTargetCode(FrameTransactionForRpc request, string code) =>

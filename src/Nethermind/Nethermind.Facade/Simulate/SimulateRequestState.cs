@@ -10,7 +10,17 @@ public class SimulateRequestState : IBlobBaseFeeOverrideProvider
 {
     public bool Validate { get; set; }
     public UInt256? BlobBaseFeeOverride { get; set; }
+
+    /// <summary>The request budget left under the RPC gas cap, which bounds every call but those that may exceed it.</summary>
     public ulong TotalGasLeft { get; set; }
+
+    /// <summary>
+    /// The request budget left for calls that may exceed the RPC gas cap: the cap raised to the gas limit of the block
+    /// the simulation builds on, or <see langword="null"/> when they draw on <see cref="TotalGasLeft"/> as well.
+    /// </summary>
+    /// <remarks>Both budgets deplete by every call's gas, so this one never holds less than <see cref="TotalGasLeft"/>.</remarks>
+    public ulong? RaisedGasLeft { get; set; }
+
     public ulong BlockGasLeft { get; set; }
 
     /// <summary>Remaining EIP-8037 state-dimension block budget, mirroring <see cref="BlockGasLeft"/> (execution).</summary>

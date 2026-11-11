@@ -63,11 +63,16 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
         if (tx.SupportsFrames)
             return EstimateFrameTx(tx, header, spec, gasCap);
 
-        ulong hi = tx.GasLimit >= GasCostOf.Transaction ? tx.GasLimit : header.GasLimit;
+        // A request gas counts as set from the fork's lowest transaction cost, EIP-2780's base cost from Amsterdam.
+        ulong lowestTxCost = spec.IsEip2780Enabled ? GasCostOf.TransactionEip2780 : GasCostOf.Transaction;
+        ulong hi = tx.GasLimit >= lowestTxCost ? tx.GasLimit : header.GasLimit;
 
-        // EIP-7825 caps the gas of a single transaction until EIP-8037 lifts the cap to both gas dimensions.
+        // EIP-7825 caps the gas of a single transaction until EIP-8037 lifts the cap to both gas dimensions, which it
+        // caps together at TX_MAX_TOTAL_GAS_LIMIT.
         if (hi > Eip7825Constants.DefaultTxGasLimitCap && spec.IsEip7825Enabled && !spec.IsEip8037Enabled)
             hi = Eip7825Constants.DefaultTxGasLimitCap;
+        else if (hi > Eip8037Constants.TxMaxTotalGasLimit && spec.IsEip8037Enabled)
+            hi = Eip8037Constants.TxMaxTotalGasLimit;
 
         UInt256 feeCap = tx.MaxFeePerGas;
         if (!feeCap.IsZero)
@@ -97,10 +102,11 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
 
         Execution execution = new(transactionProcessor, tx, blockContext, token);
 
-        // A plain transfer runs no code and earns no refund, so one run at the base cost is exact when it passes.
+        // A plain transfer runs no code and earns no refund, so one run at the base cost is exact when it passes. It
+        // does not run above the highest gas limit, which a request gas below the base cost can set.
         if (tx.Data.IsEmpty && tx.To is not null && !stateProvider.IsContract(tx.To))
         {
-            Run transfer = execution.Run(GasCostOf.Transaction);
+            Run transfer = execution.Run(Math.Min(hi, GasCostOf.Transaction));
             if (transfer.Status == RunStatus.Succeeded)
                 return GasEstimation.Success(transfer.GasUsed);
         }
@@ -123,6 +129,23 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
 
         ulong lo = probe.GasUsed - 1;
 
+        // A gas limit is only sufficient if no more nested calls fail than at the highest one. Otherwise the search
+        // can settle on a limit where an inner call runs out of gas, the caller catches the failure and the
+        // transaction succeeds while doing something other than intended.
+        int failuresAtHi = probe.FailedNestedCalls;
+        int failuresAtCap = failuresAtHi;
+
+        // EIP-8037: gas above TX_MAX_GAS_LIMIT only funds the state gas reservoir. A transaction whose nested call
+        // completes only with a reservoir would otherwise be sized past the cap, so for a limit up to the cap the run
+        // at the cap is the reference too when it succeeds. Above the cap the highest limit stays the only reference,
+        // so a limit there cannot starve a nested call that the reservoir funds, such as a second creation.
+        if (spec.IsEip8037Enabled && hi > Eip7825Constants.DefaultTxGasLimitCap)
+        {
+            Run capped = execution.Run(Eip7825Constants.DefaultTxGasLimitCap);
+            if (capped.Status == RunStatus.Succeeded && capped.FailedNestedCalls > failuresAtCap)
+                failuresAtCap = capped.FailedNestedCalls;
+        }
+
         // EIP-150 withholds 1/64 of the gas at every call, so the peak gas plus a call stipend, scaled by 64/63,
         // is usually enough for the transaction to succeed.
         ulong optimistic = (probe.MaxUsedGas + GasCostOf.CallStipend) * 64 / 63;
@@ -132,7 +155,7 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
             if (run.Status == RunStatus.Rejected)
                 return GasEstimation.Rejected(run.Error!, optimistic);
 
-            if (run.Status == RunStatus.Succeeded)
+            if (run.Suffices(AllowedFailures(optimistic)))
                 hi = optimistic;
             else
                 lo = optimistic;
@@ -149,13 +172,15 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
             if (run.Status == RunStatus.Rejected)
                 return GasEstimation.Rejected(run.Error!, mid);
 
-            if (run.Status == RunStatus.Succeeded)
+            if (run.Suffices(AllowedFailures(mid)))
                 hi = mid;
             else
                 lo = mid;
         }
 
         return GasEstimation.Success(hi);
+
+        int AllowedFailures(ulong gasLimit) => gasLimit <= Eip7825Constants.DefaultTxGasLimitCap ? failuresAtCap : failuresAtHi;
     }
 
     /// <summary>Reports an execution failure at the highest gas limit that has no standard text, as it always was.</summary>
@@ -242,6 +267,7 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
         Rejected,
     }
 
+    /// <param name="FailedNestedCalls">How many nested calls and creations of a successful run failed, reverts included.</param>
     private readonly record struct Run(
         RunStatus Status,
         ulong GasUsed = 0,
@@ -252,7 +278,12 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
         byte[]? ReturnValue = null,
         EvmExceptionType ExceptionType = EvmExceptionType.None,
         string? TracerError = null,
-        TransactionResult.ErrorType RejectionType = TransactionResult.ErrorType.None);
+        TransactionResult.ErrorType RejectionType = TransactionResult.ErrorType.None,
+        int FailedNestedCalls = 0)
+    {
+        /// <summary>Whether the run succeeded with at most <paramref name="allowedFailures"/> of its nested calls failing.</summary>
+        public bool Suffices(int allowedFailures) => Status == RunStatus.Succeeded && FailedNestedCalls <= allowedFailures;
+    }
 
     private sealed class Execution
     {
@@ -272,8 +303,7 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
             tx.CopyTo(_runTx, copyHash: false);
             _maxFeePerBlobGas = tx.MaxFeePerBlobGas;
             _blockContext = blockContext;
-            // Only a creation can run out of gas after its frame completes, while depositing the code.
-            _tracer = new EstimationTracer(tracksFrames: tx.IsContractCreation);
+            _tracer = new EstimationTracer(isCreation: tx.IsContractCreation);
             _cancellableTracer = _tracer.WithCancellation(token);
             _tipAboveFeeCap = tx.GetTipAboveFeeCapError(blockContext.Spec);
         }
@@ -322,7 +352,7 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
             }
 
             if (result.EvmExceptionType == EvmExceptionType.None && _tracer.StatusCode == StatusCode.Success)
-                return new Run(RunStatus.Succeeded, _tracer.GasSpent, _tracer.MaxUsedGas);
+                return new Run(RunStatus.Succeeded, _tracer.GasSpent, _tracer.MaxUsedGas, FailedNestedCalls: _tracer.FailedNestedCalls);
 
             bool reverted = result.EvmExceptionType == EvmExceptionType.Revert;
             EvmExceptionType exceptionType = GetExceptionType(in result);
@@ -332,7 +362,7 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
                 _tracer.MaxUsedGas,
                 result.GetErrorMessage(_tracer.Error) ?? (reverted ? ExecutionReverted : TransactionExecutionFails),
                 reverted,
-                exceptionType == EvmExceptionType.OutOfGas && (!_tracer.TracksFrames || _tracer.TopFrameOutOfGas),
+                exceptionType == EvmExceptionType.OutOfGas && (!_tracer.IsCreation || _tracer.TopFrameOutOfGas),
                 _tracer.ReturnValue,
                 exceptionType,
                 _tracer.Error);
@@ -350,15 +380,27 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
                 : result.EvmExceptionType;
     }
 
-    /// <summary>Output tracer that can also tell whether the outermost frame itself ran out of gas.</summary>
-    private sealed class EstimationTracer(bool tracksFrames) : CallOutputTracer
+    /// <summary>
+    /// Output tracer that counts the nested calls that fail and can also tell whether the outermost frame itself
+    /// ran out of gas.
+    /// </summary>
+    /// <remarks>
+    /// Frames are traced on every run, which reports per frame rather than per instruction. Only a creation can run
+    /// out of gas after its frame completes, while depositing the code, so only a creation reads
+    /// <see cref="TopFrameOutOfGas"/>.
+    /// </remarks>
+    private sealed class EstimationTracer(bool isCreation) : CallOutputTracer
     {
         private int _depth;
         private bool _inPrecompile;
 
-        public bool TracksFrames => tracksFrames;
+        public bool IsCreation => isCreation;
         public bool TopFrameOutOfGas { get; private set; }
-        public override bool IsTracingActions => tracksFrames;
+
+        /// <summary>How many nested calls and creations ended in an error, reverts and failed prechecks included.</summary>
+        public int FailedNestedCalls { get; private set; }
+
+        public override bool IsTracingActions => true;
 
         public void ResetRun()
         {
@@ -366,6 +408,7 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
             _depth = 0;
             _inPrecompile = false;
             TopFrameOutOfGas = false;
+            FailedNestedCalls = 0;
         }
 
         public override void ReportAction(ulong gas, UInt256 value, Address from, Address to, ReadOnlyMemory<byte> input, ExecutionType callType, bool isPrecompileCall = false)
@@ -380,14 +423,31 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
 
         public override void ReportActionEnd(ulong gas, Address deploymentAddress, ReadOnlyMemory<byte> deployedCode) => ExitFrame();
 
-        public override void ReportActionRevert(ulong gas, ReadOnlyMemory<byte> output) => ExitFrame();
+        public override void ReportActionRevert(ulong gas, ReadOnlyMemory<byte> output)
+        {
+            CountNestedFailure();
+            ExitFrame();
+        }
 
         public override void ReportActionError(EvmExceptionType exceptionType)
         {
             if (!_inPrecompile && _depth == 1 && exceptionType == EvmExceptionType.OutOfGas)
                 TopFrameOutOfGas = true;
 
+            CountNestedFailure();
             ExitFrame();
+        }
+
+        // Only a CALL-family or CREATE operation is rejected, so the action is always nested, and it enters no frame.
+        public override void ReportRejectedAction(ulong gas, ulong gasLeft, UInt256 value, Address from, Address? to, ReadOnlyMemory<byte> input,
+            ExecutionType callType, EvmExceptionType error, bool isPrecompileCall = false) => FailedNestedCalls++;
+
+        // A precompile runs below the frame that called it without opening a code frame of its own, so it is nested
+        // once any code frame is open.
+        private void CountNestedFailure()
+        {
+            if (_depth > (_inPrecompile ? 0 : 1))
+                FailedNestedCalls++;
         }
 
         private void ExitFrame()

@@ -13,6 +13,7 @@ using Nethermind.Evm;
 using Nethermind.Evm.GasPolicy;
 using Nethermind.Evm.Tracing;
 using Nethermind.Evm.TransactionProcessing;
+using Nethermind.Facade.Proxy.Models.Simulate;
 
 namespace Nethermind.Facade.Simulate;
 
@@ -46,6 +47,7 @@ public class SimulateTransactionProcessorAdapter(ITransactionProcessor transacti
         ulong blockStateGasUsed = receiptsTracer?.BlockStateGasUsed.SaturatingSub(cumulativeStateGasBefore) ?? 0;
         // execution-apis: the request-wide cap depletes by the call's receipt gas; the block budgets track one EIP-8037 dimension each.
         simulateRequestState.TotalGasLeft = simulateRequestState.TotalGasLeft.SaturatingSub(transaction.SpentGas);
+        simulateRequestState.RaisedGasLeft = simulateRequestState.RaisedGasLeft?.SaturatingSub(transaction.SpentGas);
         simulateRequestState.BlockGasLeft = simulateRequestState.BlockGasLeft.SaturatingSub(blockGasUsed);
         // The BAL inclusion check refreshes this from receipt totals when it runs; otherwise — non-BAL specs,
         // ForceSequentialBlockAccessList, block production, Validation:false — this running value is authoritative.
@@ -70,11 +72,12 @@ public class SimulateTransactionProcessorAdapter(ITransactionProcessor transacti
 
         // The per-dimension budgets shrink as the block is processed.
         ulong blockGasAvailable = GetBlockGasAvailable(stateGasAvailable);
-        if (!simulateRequestState.Calls[_currentTxIndex].HadGasLimitInRequest)
+        TransactionWithSourceDetails call = simulateRequestState.Calls[_currentTxIndex];
+        if (!call.HadGasLimitInRequest)
         {
             transaction.GasLimit = Math.Min(blockGasAvailable, simulateRequestState.TotalGasLeft);
         }
-        else if (simulateRequestState.Calls[_currentTxIndex].GasLimitToFitBlock is { } requestedGas
+        else if (call.GasLimitToFitBlock is { } requestedGas
             && !FitsBlock(transaction, requestedGas, blockGasAvailable, stateGasAvailable, out ulong remaining, out ulong required))
         {
             TransactionResult result = TransactionResult.ErrorType.BlockGasLimitExceeded.WithDetail(
@@ -82,9 +85,12 @@ public class SimulateTransactionProcessorAdapter(ITransactionProcessor transacti
             throw new InvalidTransactionException(_header!, result.ErrorDescription, result);
         }
 
-        if (simulateRequestState.TotalGasLeft < transaction.GasLimit)
+        ulong requestGasLeft = call.MayExceedGasCap
+            ? simulateRequestState.RaisedGasLeft ?? simulateRequestState.TotalGasLeft
+            : simulateRequestState.TotalGasLeft;
+        if (requestGasLeft < transaction.GasLimit)
         {
-            transaction.GasLimit = simulateRequestState.TotalGasLeft;
+            transaction.GasLimit = requestGasLeft;
         }
     }
 

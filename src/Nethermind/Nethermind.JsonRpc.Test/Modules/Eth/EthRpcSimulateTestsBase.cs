@@ -31,6 +31,13 @@ public class EthRpcSimulateTestsBase
 
     public const string GasProbeBytecode = "0x5a60005260206000f3";
 
+    /// <summary>
+    /// The code of a contract that returns the gas left at entry if it is at least <paramref name="threshold"/> and
+    /// reverts otherwise: GAS PUSH4 threshold DUP2 LT PUSH1 19 JUMPI PUSH1 0 MSTORE PUSH1 32 PUSH1 0 RETURN
+    /// JUMPDEST PUSH1 0 PUSH1 0 REVERT.
+    /// </summary>
+    public static string NeedsGasCode(ulong threshold) => $"0x5a63{(uint)threshold:x8}811060135760005260206000f35b60006000fd";
+
     public static SimulatePayload<TransactionForRpc> CreateGasProbePayload(ulong? requestGas = null)
     {
         LegacyTransactionForRpc call = new()
@@ -62,7 +69,8 @@ public class EthRpcSimulateTestsBase
 
     public static IEnumerable<TestCaseData> GasCapSimulateCases()
     {
-        yield return new TestCaseData(50_000UL, 100_000UL, true).SetName("capped");
+        // A call that sets its gas is never capped below the block gas limit, so only a default gas is capped.
+        yield return new TestCaseData(50_000UL, (ulong?)null, true).SetName("capped");
         yield return new TestCaseData(0UL, (ulong?)null, false).SetName("uncapped_zero_cap");
     }
 

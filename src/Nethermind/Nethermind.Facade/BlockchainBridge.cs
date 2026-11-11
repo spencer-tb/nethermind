@@ -278,7 +278,7 @@ namespace Nethermind.Facade
 
             string? error = result.GetErrorMessage(tracer.Error);
             if (result.TransactionExecuted && error is not null && result.EvmExceptionType is not EvmExceptionType.Revert
-                && ExecutionFailureText.TryDescribe(txProcessor, tx, in blockContext, result.EvmExceptionType, error, cancellationToken, out string failureText))
+                && ExecutionFailureText.TryDescribe(txProcessor, tx, in blockContext, result.EvmExceptionType, error, cancellationToken, out string failureText, EthCallOptions))
             {
                 error = failureText;
             }
@@ -707,11 +707,18 @@ namespace Nethermind.Facade
             return previousCount == discoveredCount;
         }
 
+        /// <summary>
+        /// EIP-8037: eth_call may use all its gas as execution gas, its intrinsic cost may exceed TX_MAX_GAS_LIMIT, and
+        /// its gas limit may exceed TX_MAX_TOTAL_GAS_LIMIT.
+        /// To preview a transaction as a block runs it, eth_simulateV1 with validation applies the cap.
+        /// </summary>
+        private const ExecutionOptions EthCallOptions = ExecutionOptions.CommitAndRestore | ExecutionOptions.UncappedExecutionGas;
+
         private static TransactionResult TryCallAndRestore(ITransactionProcessor txProcessor, Transaction transaction, in BlockExecutionContext blockContext, ITxTracer tracer)
         {
             try
             {
-                return txProcessor.CallAndRestore(transaction, in blockContext, tracer);
+                return txProcessor.CallAndRestoreUncapped(transaction, in blockContext, tracer);
             }
             catch (InsufficientBalanceException)
             {

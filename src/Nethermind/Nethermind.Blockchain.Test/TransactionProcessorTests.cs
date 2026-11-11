@@ -446,11 +446,25 @@ public partial class TransactionProcessorTests(bool eip155Enabled)
         using (Assert.EnterMultipleScope())
         {
             Assert.That(tracer.GasSpent, Is.EqualTo(35228ul), "gas used after the selfdestruct refund");
-            Assert.That(estimation.Gas, Is.EqualTo(54225ul), "lowest gas limit the call succeeds with");
+            Assert.That(estimation.Gas, Is.EqualTo(59307ul), "lowest gas limit the call to the self-destructing contract succeeds with");
             Assert.That(estimation.Error, Is.Null);
         }
 
-        ConfirmEnoughEstimate(tx, block, estimation.Gas);
+        // The transaction succeeds below the estimate too, but its call to the self-destructing contract runs out of
+        // gas there, so the refund only applies from the estimate on.
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(GasSpentAt(tx, block, estimation.Gas), Is.EqualTo(35228ul), "the selfdestruct refund applies at the estimate");
+            Assert.That(GasSpentAt(tx, block, estimation.Gas - 1), Is.Not.EqualTo(35228ul), "the selfdestruct does not run below the estimate");
+        }
+    }
+
+    private ulong GasSpentAt(Transaction tx, Block block, ulong gasLimit)
+    {
+        CallOutputTracer tracer = new();
+        tx.GasLimit = gasLimit;
+        _transactionProcessor.CallAndRestore(tx, new BlockExecutionContext(block.Header, _specProvider.GetSpec(block.Header)), tracer);
+        return tracer.GasSpent;
     }
 
     private GasEstimation Estimate(Transaction tx, Block block) =>
