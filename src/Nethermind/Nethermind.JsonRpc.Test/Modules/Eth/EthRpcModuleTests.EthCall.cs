@@ -1242,10 +1242,11 @@ public partial class EthRpcModuleTests
     }
 
     /// <summary>
-    /// Only eth_simulateV1 with <c>validation: false</c> lifts the EIP-7825 execution gas cap; eth_call keeps it.
+    /// After EIP-8037, eth_call can use all its gas as execution gas: TX_MAX_GAS_LIMIT does not cap it, as it does not
+    /// for eth_simulateV1 with <c>validation: false</c>.
     /// </summary>
     [Test]
-    public async Task Eth_call_keeps_the_execution_gas_cap_for_gas_above_it()
+    public async Task Eth_call_lifts_the_execution_gas_cap_for_gas_above_it()
     {
         using Context ctx = await Context.CreateWithAmsterdamEnabled();
         ulong gas = Eip7825Constants.DefaultTxGasLimitCap * 2;
@@ -1264,7 +1265,22 @@ public partial class EthRpcModuleTests
 #pragma warning disable NUnit2045 // The later assertion consumes or dereferences the value checked by the earlier guard, including through a constraint or conversion.
         Assert.That(result, Is.Not.Null, serialized);
 #pragma warning restore NUnit2045
-        Assert.That(new UInt256(Bytes.FromHexString(result!), isBigEndian: true), Is.LessThan((UInt256)Eip7825Constants.DefaultTxGasLimitCap));
+        Assert.That(new UInt256(Bytes.FromHexString(result!), isBigEndian: true), Is.GreaterThan((UInt256)Eip7825Constants.DefaultTxGasLimitCap));
+    }
+
+    /// <summary>After EIP-8037, the intrinsic cost of an eth_call may exceed TX_MAX_GAS_LIMIT.</summary>
+    [Test]
+    public async Task Eth_call_allows_intrinsic_gas_above_the_execution_gas_cap()
+    {
+        using Context ctx = await Context.CreateWithAmsterdamEnabled();
+        // 300,000 zero bytes floor the intrinsic cost at about 19.2M gas (EIP-7976), above TX_MAX_GAS_LIMIT.
+        string data = new string('0', 600_000).Insert(0, "0x");
+        TransactionForRpc transaction = ctx.Test.JsonSerializer.Deserialize<TransactionForRpc>(
+            $$"""{"from":"{{TestItem.AddressA}}","to":"{{SecondaryTestAddress}}","gas":"0x17d7840","data":"{{data}}"}""")!;
+
+        string serialized = await ctx.Test.TestEthRpc("eth_call", transaction);
+
+        Assert.That(serialized, Is.EqualTo("{\"jsonrpc\":\"2.0\",\"result\":\"0x\",\"id\":67}"));
     }
 
     /// <summary>

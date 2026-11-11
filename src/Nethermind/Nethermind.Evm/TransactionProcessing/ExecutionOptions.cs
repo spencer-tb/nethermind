@@ -58,6 +58,12 @@ public enum ExecutionOptions
     StrictWarmup = 256,
 
     /// <summary>
+    /// EIP-8037 for <c>eth_call</c>: all the gas left after the intrinsic cost is execution gas, and the intrinsic cost
+    /// may exceed TX_MAX_GAS_LIMIT. Only effective together with <see cref="SkipValidation"/>.
+    /// </summary>
+    UncappedExecutionGas = 512,
+
+    /// <summary>
     /// Skip potential fail checks and commit state after execution
     /// </summary>
     SkipValidationAndCommit = Commit | SkipValidation,

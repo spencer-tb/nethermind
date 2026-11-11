@@ -41,6 +41,13 @@ public static class ITransactionProcessorExtensions
             => transactionProcessor.Process(transaction, txTracer, ExecutionOptions.CommitAndRestore);
 
         /// <summary>
+        /// Call transaction as <c>eth_call</c> does, rollback state: EIP-8037's TX_MAX_GAS_LIMIT caps neither its
+        /// execution gas nor its intrinsic cost.
+        /// </summary>
+        public TransactionResult CallAndRestoreUncapped(Transaction transaction, ITxTracer txTracer)
+            => transactionProcessor.Process(transaction, txTracer, ExecutionOptions.CommitAndRestore | ExecutionOptions.UncappedExecutionGas);
+
+        /// <summary>
         /// Execute transaction, keep the state uncommitted (block-building mode).
         /// </summary>
         public TransactionResult BuildUp(Transaction transaction, ITxTracer txTracer)
@@ -81,6 +88,12 @@ public static class ITransactionProcessorExtensions
         {
             transactionProcessor.SetBlockExecutionContext(in blockExecutionContext);
             return transactionProcessor.CallAndRestore(transaction, txTracer);
+        }
+
+        public TransactionResult CallAndRestoreUncapped(Transaction transaction, in BlockExecutionContext blockExecutionContext, ITxTracer txTracer)
+        {
+            transactionProcessor.SetBlockExecutionContext(in blockExecutionContext);
+            return transactionProcessor.CallAndRestoreUncapped(transaction, txTracer);
         }
 
         public TransactionResult BuildUp(Transaction transaction, in BlockExecutionContext blockExecutionContext, ITxTracer txTracer)

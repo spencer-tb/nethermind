@@ -202,6 +202,7 @@ public static class ExecutionFailureText
 
     /// <summary>Describes the failure of <paramref name="tx"/> as it ran in <paramref name="blockContext"/>.</summary>
     /// <param name="error">The failure as the processor described it.</param>
+    /// <param name="options">The options <paramref name="tx"/> ran with, which a rerun that names the operation repeats.</param>
     /// <returns>Whether <paramref name="text"/> holds the text to report; false keeps <paramref name="error"/>.</returns>
     public static bool TryDescribe(
         ITransactionProcessor transactionProcessor,
@@ -210,7 +211,8 @@ public static class ExecutionFailureText
         EvmExceptionType failure,
         string error,
         CancellationToken token,
-        out string text)
+        out string text,
+        ExecutionOptions options = ExecutionOptions.CommitAndRestore)
     {
         text = error;
         if (failure == EvmExceptionType.PrecompileFailure)
@@ -230,7 +232,7 @@ public static class ExecutionFailureText
             case EvmExceptionType.BadInstruction
                 or EvmExceptionType.StackUnderflow
                 or EvmExceptionType.StackOverflow:
-                return TryDescribeFailingOperation(transactionProcessor, tx, in blockContext, failure, token, ref text);
+                return TryDescribeFailingOperation(transactionProcessor, tx, in blockContext, failure, options, token, ref text);
             default:
                 return false;
         }
@@ -241,6 +243,7 @@ public static class ExecutionFailureText
         Transaction tx,
         in BlockExecutionContext blockContext,
         EvmExceptionType failure,
+        ExecutionOptions options,
         CancellationToken token,
         ref string text)
     {
@@ -248,7 +251,8 @@ public static class ExecutionFailureText
         TransactionResult result;
         try
         {
-            result = transactionProcessor.CallAndRestore(tx, in blockContext, tracer.WithCancellation(token));
+            transactionProcessor.SetBlockExecutionContext(in blockContext);
+            result = transactionProcessor.Process(tx, tracer.WithCancellation(token), options);
         }
         catch (InsufficientBalanceException)
         {

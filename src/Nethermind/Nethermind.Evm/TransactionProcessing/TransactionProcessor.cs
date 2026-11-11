@@ -805,7 +805,7 @@ namespace Nethermind.Evm.TransactionProcessing
         }
 
         protected virtual TransactionResult CalculateAvailableGas(Transaction tx, IReleaseSpec spec, ExecutionOptions opts, in IntrinsicGas<TGasPolicy> intrinsicGas, out TGasPolicy gasAvailable) =>
-            TGasPolicy.TryCreateAvailableFromIntrinsic(tx.GasLimit, intrinsicGas.Standard, spec, out gasAvailable, capExecutionGas: !IsNonStrictSimulation(opts))
+            TGasPolicy.TryCreateAvailableFromIntrinsic(tx.GasLimit, intrinsicGas.Standard, spec, out gasAvailable, capExecutionGas: !LiftsExecutionGasCap(opts))
                 ? TransactionResult.Ok
                 : TransactionResult.GasLimitBelowIntrinsicGas;
 
@@ -1039,7 +1039,7 @@ namespace Nethermind.Evm.TransactionProcessing
                     TxErrorMessages.TxGasLimitCapExceeded(tx.GasLimit, Eip8037Constants.TxMaxTotalGasLimit));
             }
 
-            if (spec.IsEip8037Enabled && !IsNonStrictSimulation(opts) && intrinsicGas.ExceedsCap(Eip7825Constants.DefaultTxGasLimitCap, out ulong execution, out ulong floor))
+            if (spec.IsEip8037Enabled && !LiftsExecutionGasCap(opts) && intrinsicGas.ExceedsCap(Eip7825Constants.DefaultTxGasLimitCap, out ulong execution, out ulong floor))
             {
                 if (Logger.IsTrace) TraceLogInvalidTx(tx, $"TX_INTRINSIC_GAS_EXCEEDS_CAP execution={execution} floor={floor} > {Eip7825Constants.DefaultTxGasLimitCap}");
                 return TransactionResult.ErrorType.GasLimitBelowIntrinsicGas.WithDetail(
@@ -1450,6 +1450,13 @@ namespace Nethermind.Evm.TransactionProcessing
         /// <summary>Whether this is an eth_simulateV1 call with <c>validation: false</c>.</summary>
         private bool IsNonStrictSimulation(ExecutionOptions opts) => SkipSenderChecks && !ShouldValidate(opts);
 
+        /// <summary>
+        /// Whether EIP-8037's TX_MAX_GAS_LIMIT caps neither the execution gas nor the intrinsic cost: eth_simulateV1
+        /// with <c>validation: false</c>, and eth_call.
+        /// </summary>
+        private bool LiftsExecutionGasCap(ExecutionOptions opts) =>
+            IsNonStrictSimulation(opts) || (opts.HasFlag(ExecutionOptions.UncappedExecutionGas) && !ShouldValidate(opts));
+
         private int ExecuteEvmCall<TTracingInst>(
             Transaction tx,
             BlockHeader header,
@@ -1700,7 +1707,7 @@ namespace Nethermind.Evm.TransactionProcessing
         {
             long intrinsicStateGas = TGasPolicy.GetStateReservoir(in intrinsicGasStandard);
             long refundedTopLevelCreateStateGas = CalculateTopLevelCreateIntrinsicStateRefund(tx, in intrinsicGasStandard);
-            long initialStateReservoir = IsNonStrictSimulation(opts) ? 0 : CalculateInitialStateReservoir((long)tx.GasLimit, in intrinsicGasStandard);
+            long initialStateReservoir = LiftsExecutionGasCap(opts) ? 0 : CalculateInitialStateReservoir((long)tx.GasLimit, in intrinsicGasStandard);
             long refundedIntrinsicStateGas = Math.Max(0, postIntrinsicStateReservoir - initialStateReservoir) + refundedTopLevelCreateStateGas;
             long postHaltIntrinsicStateGas = Math.Max(0, intrinsicStateGas - refundedIntrinsicStateGas);
             if (refundedTopLevelCreateStateGas > 0)
