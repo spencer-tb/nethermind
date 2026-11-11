@@ -1266,9 +1266,9 @@ public partial class EthRpcModuleTests
 
     /// <summary>
     /// A gas-less call defaults its gas limit to the RPC gas cap, which is unbounded when
-    /// <c>JsonRpc.GasCap</c> is unset or <c>0</c>. EIP-8037 rejects any transaction above
-    /// TX_MAX_TOTAL_GAS_LIMIT regardless of validation being skipped, so the default has to be
-    /// clamped to that cap or the call is rejected before it runs.
+    /// <c>JsonRpc.GasCap</c> is unset or <c>0</c>, so after EIP-8037 the default is clamped to
+    /// TX_MAX_TOTAL_GAS_LIMIT. An explicit gas may exceed it, see
+    /// <see cref="Eth_call_with_gas_above_the_eip8037_total_cap_is_not_rejected"/>.
     /// </summary>
     [TestCase(0UL, TestName = "Eth_call_without_gas_is_clamped_to_eip8037_total_cap(uncapped)")]
     [TestCase(1_000_000_000_000UL, TestName = "Eth_call_without_gas_is_clamped_to_eip8037_total_cap(above cap)")]
@@ -1283,6 +1283,27 @@ public partial class EthRpcModuleTests
         string serialized = await ctx.Test.TestEthRpc("eth_call", transaction);
 
         Assert.That(serialized, Is.EqualTo("{\"jsonrpc\":\"2.0\",\"result\":\"0x\",\"id\":67}"));
+    }
+
+    /// <summary>
+    /// After EIP-8037, eth_call lifts the execution gas cap, so TX_MAX_TOTAL_GAS_LIMIT does not reject an explicit gas
+    /// above it either, while a gas-less call keeps defaulting to that cap.
+    /// </summary>
+    [TestCase(0UL, TestName = "Eth_call_with_gas_above_the_eip8037_total_cap_is_not_rejected(uncapped)")]
+    [TestCase(1_000_000_000_000UL, TestName = "Eth_call_with_gas_above_the_eip8037_total_cap_is_not_rejected(above cap)")]
+    public async Task Eth_call_with_gas_above_the_eip8037_total_cap_is_not_rejected(ulong gasCap)
+    {
+        using Context ctx = await Context.CreateWithAmsterdamEnabled();
+        ctx.Test.RpcConfig.GasCap = gasCap;
+
+        UInt256 explicitGas = await GasAvailableForCall(ctx, Eip8037Constants.TxMaxTotalGasLimit + 1_000_000);
+        UInt256 omittedGas = await GasAvailableForGaslessCall(ctx, gasCap);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(explicitGas, Is.GreaterThan((UInt256)Eip8037Constants.TxMaxTotalGasLimit), "an explicit gas above the total cap runs");
+            Assert.That(omittedGas, Is.LessThan((UInt256)Eip8037Constants.TxMaxTotalGasLimit), "an omitted gas defaults to the total cap");
+        }
     }
 
     /// <summary>

@@ -708,7 +708,8 @@ namespace Nethermind.Facade
         }
 
         /// <summary>
-        /// EIP-8037: eth_call may use all its gas as execution gas, and its intrinsic cost may exceed TX_MAX_GAS_LIMIT.
+        /// EIP-8037: eth_call may use all its gas as execution gas, its intrinsic cost may exceed TX_MAX_GAS_LIMIT, and
+        /// its gas limit may exceed TX_MAX_TOTAL_GAS_LIMIT.
         /// To preview a transaction as a block runs it, eth_simulateV1 with validation applies the cap.
         /// </summary>
         private const ExecutionOptions EthCallOptions = ExecutionOptions.CommitAndRestore | ExecutionOptions.UncappedExecutionGas;

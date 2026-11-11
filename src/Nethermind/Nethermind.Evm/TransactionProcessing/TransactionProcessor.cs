@@ -1031,8 +1031,9 @@ namespace Nethermind.Evm.TransactionProcessing
                 }
             }
 
-            // EIP-8037: tx.gas as a whole (both dimensions) is capped at TX_MAX_TOTAL_GAS_LIMIT. Simulation (SkipSenderChecks) does not apply the cap.
-            if (spec.IsEip8037Enabled && !SkipSenderChecks && tx.GasLimit > Eip8037Constants.TxMaxTotalGasLimit)
+            // EIP-8037: tx.gas as a whole (both dimensions) is capped at TX_MAX_TOTAL_GAS_LIMIT. Simulation (SkipSenderChecks)
+            // does not apply the cap, and neither does a call that lifts the execution gas cap, as eth_call does.
+            if (spec.IsEip8037Enabled && !SkipSenderChecks && !LiftsExecutionGasCap(opts) && tx.GasLimit > Eip8037Constants.TxMaxTotalGasLimit)
             {
                 if (Logger.IsTrace) TraceLogInvalidTx(tx, $"TX_GAS_LIMIT_EXCEEDS_MAX_TOTAL {tx.GasLimit} > {Eip8037Constants.TxMaxTotalGasLimit}");
                 return TransactionResult.ErrorType.GasLimitExceedsMaxTotalCap.WithDetail(
@@ -1451,8 +1452,8 @@ namespace Nethermind.Evm.TransactionProcessing
         private bool IsNonStrictSimulation(ExecutionOptions opts) => SkipSenderChecks && !ShouldValidate(opts);
 
         /// <summary>
-        /// Whether EIP-8037's TX_MAX_GAS_LIMIT caps neither the execution gas nor the intrinsic cost: eth_simulateV1
-        /// with <c>validation: false</c>, and eth_call.
+        /// Whether EIP-8037's TX_MAX_GAS_LIMIT caps neither the execution gas nor the intrinsic cost, and
+        /// TX_MAX_TOTAL_GAS_LIMIT does not cap the gas limit: eth_simulateV1 with <c>validation: false</c>, and eth_call.
         /// </summary>
         private bool LiftsExecutionGasCap(ExecutionOptions opts) =>
             IsNonStrictSimulation(opts) || (opts.HasFlag(ExecutionOptions.UncappedExecutionGas) && !ShouldValidate(opts));

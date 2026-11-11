@@ -42,7 +42,7 @@ public static class ITransactionProcessorExtensions
 
         /// <summary>
         /// Call transaction as <c>eth_call</c> does, rollback state: EIP-8037's TX_MAX_GAS_LIMIT caps neither its
-        /// execution gas nor its intrinsic cost.
+        /// execution gas nor its intrinsic cost, and TX_MAX_TOTAL_GAS_LIMIT does not cap its gas limit.
         /// </summary>
         public TransactionResult CallAndRestoreUncapped(Transaction transaction, ITxTracer txTracer)
             => transactionProcessor.Process(transaction, txTracer, ExecutionOptions.CommitAndRestore | ExecutionOptions.UncappedExecutionGas);
