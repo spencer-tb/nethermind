@@ -47,6 +47,16 @@ namespace Nethermind.JsonRpc.Modules.Eth
             /// <summary>Whether a fee cap below the priority fee is rejected as input rather than left to execution.</summary>
             protected virtual bool ValidatesFeeCapOrder => true;
 
+            /// <summary>Whether the RPC gas cap is never below the block gas limit for a call that sets its gas.</summary>
+            /// <remarks>A frame transaction keeps the cap, which bounds the work its frames ask for.</remarks>
+            protected virtual bool RaisesGasCapToBlockGasLimit => false;
+
+            /// <summary>The RPC gas cap for <paramref name="call"/> on <paramref name="header"/>, the requested block before any override.</summary>
+            private ulong? GasCapFor(TransactionForRpc call, BlockHeader header) =>
+                RaisesGasCapToBlockGasLimit && call.Gas is not null && call is not FrameTransactionForRpc
+                    ? _rpcConfig.GasCap.RaisedToBlockGasLimit(header.GasLimit)
+                    : _rpcConfig.GasCap;
+
             /// <summary>
             /// Whether a zero blob fee cap is taken as an omitted one, as a call takes it, rather than rejected, as for a
             /// transaction to send.
@@ -66,7 +76,7 @@ namespace Nethermind.JsonRpc.Modules.Eth
 
                 // The call converts against the fork it runs in, which a block override can change.
                 IReleaseSpec spec = GetSpec(_blockOverride?.ApplyTo(header) ?? header);
-                Result<Transaction> result = call.ToCallTransaction(spec, _rpcConfig.GasCap, validateFeeCapOrder: ValidatesFeeCapOrder, checksFork: ChecksFork);
+                Result<Transaction> result = call.ToCallTransaction(spec, GasCapFor(call, header), validateFeeCapOrder: ValidatesFeeCapOrder, checksFork: ChecksFork);
                 if (result.IsError) return result;
 
                 Transaction tx = result.Data;
@@ -173,6 +183,8 @@ namespace Nethermind.JsonRpc.Modules.Eth
         {
             protected override bool ValidatesFeeCapOrder => false;
 
+            protected override bool RaisesGasCapToBlockGasLimit => true;
+
             protected override ResultWrapper<HexBytes> ExecuteTx(BlockHeader header, Transaction tx, Dictionary<Address, AccountOverride>? stateOverride, CancellationToken token)
             {
                 CallOutput result = _blockchainBridge.Call(header, tx, stateOverride, BlobBaseFeeOverride, BlockOverrideForExecution, NoBaseFee, token);
@@ -197,6 +209,9 @@ namespace Nethermind.JsonRpc.Modules.Eth
 
             protected override bool ValidatesFeeCapOrder => false;
 
+            // The search may reach the block gas limit whatever the RPC gas cap.
+            protected override bool RaisesGasCapToBlockGasLimit => true;
+
             public override ResultWrapper<UInt256?> Execute(
                 TransactionForRpc transactionCall,
                 BlockParameter? blockParameter,
@@ -204,7 +219,7 @@ namespace Nethermind.JsonRpc.Modules.Eth
                 SearchResult<BlockHeader>? searchResult = null)
             {
                 // Match Geth: eth_estimateGas treats gas: 0x0 the same as an omitted gas field and
-                // bounds the binary search by blockGasLimit (then caps at gasCap inside ToTransaction).
+                // bounds the binary search by blockGasLimit, which the gas cap does not lower.
                 if (!transactionCall.Gas.IsGasCapped())
                 {
                     if (BlockOverride?.GasLimit is not null)
@@ -223,7 +238,8 @@ namespace Nethermind.JsonRpc.Modules.Eth
 
             protected override ResultWrapper<UInt256?> ExecuteTx(BlockHeader header, Transaction tx, Dictionary<Address, AccountOverride> stateOverride, CancellationToken token)
             {
-                CallOutput result = _blockchainBridge.EstimateGas(header, tx, _errorMargin, stateOverride, BlobBaseFeeOverride, BlockOverrideForExecution, _rpcConfig.GasCap ?? 0, NoBaseFee, token);
+                ulong? gasCap = tx.SupportsFrames ? _rpcConfig.GasCap : _rpcConfig.GasCap.RaisedToBlockGasLimit(header.GasLimit);
+                CallOutput result = _blockchainBridge.EstimateGas(header, tx, _errorMargin, stateOverride, BlobBaseFeeOverride, BlockOverrideForExecution, gasCap ?? 0, NoBaseFee, token);
 
                 // A transaction rejected before execution reports, as GasSpent, the gas limit it was rejected at.
                 string? errorMessage = result.InputError

@@ -1125,35 +1125,79 @@ public partial class EthRpcModuleTests
     }
 
     /// <summary>
-    /// Verifies gas cap is enforced by measuring actual gas available to the EVM.
-    /// Gas cap enforcement is in the shared <c>TxExecutor.Execute()</c> base class,
-    /// so this also covers <c>eth_estimateGas</c> and <c>eth_createAccessList</c>.
+    /// Verifies gas cap is enforced by measuring actual gas available to the EVM, with the cap above the block gas
+    /// limit so that it binds.
     /// </summary>
     [Test]
     public async Task Eth_call_gas_available_is_capped_by_gas_cap()
     {
         using Context ctx = await Context.Create();
-        ulong gasCap = 50_000;
+        ulong blockGasLimit = ctx.Test.BlockTree.FindHeadBlock()!.Header.GasLimit;
+        ulong gasCap = blockGasLimit + 50_000;
         ctx.Test.RpcConfig.GasCap = gasCap;
 
+        // Request twice the cap, which must be capped to it.
+        UInt256 gasAvailable = await GasAvailableForCall(ctx, gasCap * 2);
+
+        // gas available = gasLimit - intrinsicGas, so a capped gas limit leaves less than the cap.
+        Assert.That(gasAvailable, Is.GreaterThan((UInt256)blockGasLimit).And.LessThan((UInt256)gasCap));
+    }
+
+    /// <summary>
+    /// A transaction that fits in the block can be included, so an <c>eth_call</c> that sets its gas is never capped
+    /// below the block gas limit, while one that omits it keeps the RPC gas cap as its default.
+    /// </summary>
+    [Test]
+    public async Task Eth_call_gas_cap_is_never_below_the_block_gas_limit()
+    {
+        using Context ctx = await Context.Create();
+        ulong blockGasLimit = ctx.Test.BlockTree.FindHeadBlock()!.Header.GasLimit;
+        ulong gasCap = blockGasLimit / 4;
+        ctx.Test.RpcConfig.GasCap = gasCap;
+
+        UInt256 explicitGas = await GasAvailableForCall(ctx, blockGasLimit * 3 / 4);
+        UInt256 omittedGas = await GasAvailableForGaslessCall(ctx, gasCap);
+        UInt256 aboveBlockGasLimit = await GasAvailableForCall(ctx, blockGasLimit * 2);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(explicitGas, Is.GreaterThan((UInt256)(blockGasLimit / 2)), "an explicit gas within the block gas limit is not capped");
+            Assert.That(omittedGas, Is.LessThan((UInt256)gasCap), "an omitted gas keeps the cap as its default");
+            Assert.That(aboveBlockGasLimit, Is.GreaterThan((UInt256)gasCap).And.LessThan((UInt256)blockGasLimit), "an explicit gas above the block gas limit is capped at it");
+        }
+    }
+
+    /// <summary>A block override of the gas limit does not raise the cap above the gas limit of the requested block.</summary>
+    [Test]
+    public async Task Eth_call_block_override_does_not_raise_the_gas_cap()
+    {
+        using Context ctx = await Context.Create();
+        ulong blockGasLimit = ctx.Test.BlockTree.FindHeadBlock()!.Header.GasLimit;
+        ulong gasCap = blockGasLimit / 4;
+        ctx.Test.RpcConfig.GasCap = gasCap;
+        object blockOverride = JsonSerializer.Deserialize<object>($$"""{"gasLimit":"0x{{gasCap:X}}"}""")!;
+
+        UInt256 gasAvailable = await GasAvailableForCall(ctx, blockGasLimit * 2, blockOverride);
+
+        Assert.That(gasAvailable, Is.GreaterThan((UInt256)gasCap).And.LessThan((UInt256)blockGasLimit));
+    }
+
+    /// <summary>Runs an <c>eth_call</c> with <paramref name="gas"/> and returns the gas available at the start of contract execution.</summary>
+    private static async Task<UInt256> GasAvailableForCall(Context ctx, ulong gas, object? blockOverride = null)
+    {
         // Contract: GAS PUSH1 0 MSTORE PUSH1 32 PUSH1 0 RETURN
-        // Returns gas available at start of execution as a 32-byte uint256
         object? stateOverride = JsonSerializer.Deserialize<object>(
             """{"0xc200000000000000000000000000000000000000":{"code":"0x5a60005260206000f3"}}""");
-
-        // Request 100K gas — should be capped to 50K by GasCap
         TransactionForRpc transaction = ctx.Test.JsonSerializer.Deserialize<TransactionForRpc>(
-            """{"to":"0xc200000000000000000000000000000000000000", "gas":"0x186A0"}""")!;
+            $$"""{"to":"0xc200000000000000000000000000000000000000","gas":"0x{{gas:X}}"}""")!;
 
-        string serialized = await ctx.Test.TestEthRpc("eth_call", transaction, "latest", stateOverride);
+        string serialized = blockOverride is null
+            ? await ctx.Test.TestEthRpc("eth_call", transaction, "latest", stateOverride)
+            : await ctx.Test.TestEthRpc("eth_call", transaction, "latest", stateOverride, blockOverride);
 
-        string result = JToken.Parse(serialized).Value<string>("result")!;
-        ulong gasAvailable = (ulong)Bytes.FromHexString(result).ToUInt256();
-
-        // gas available = gasLimit - intrinsicGas; if gas cap works, gasLimit ≤ 50K so gas available < 50K
-        // Without gas cap, gas available would be ~79K (100K - 21K intrinsic)
-        Assert.That(gasAvailable, Is.LessThan(gasCap));
-        Assert.That(gasAvailable, Is.GreaterThan(0UL));
+        string? result = JToken.Parse(serialized)["result"]?.Value<string>();
+        Assert.That(result, Is.Not.Null, serialized);
+        return Bytes.FromHexString(result!).ToUInt256();
     }
 
     /// <summary>

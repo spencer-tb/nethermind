@@ -1347,9 +1347,10 @@ public partial class EthRpcModuleTests
         Assert.That(JToken.Parse(serialized)["error"]?["message"]?.Value<string>(), Is.EqualTo("gas required exceeds allowance (100000)"), serialized);
     }
 
-    [TestCase(",\"data\":\"0x01\"", null, "gas required exceeds allowance (20000)", TestName = "Call data")]
-    [TestCase("", "0x5208", null, TestName = "Plain transfer runs at the base cost")]
-    public async Task Estimate_gas_with_a_gas_cap_below_the_base_cost(string dataField, string? expectedResult, string? expectedError)
+    /// <summary>The search reaches the block gas limit, so a gas cap below the base cost does not fail the estimate.</summary>
+    [TestCase(",\"data\":\"0x01\"", null, TestName = "Call data")]
+    [TestCase("", "0x5208", TestName = "Plain transfer runs at the base cost")]
+    public async Task Estimate_gas_with_a_gas_cap_below_the_base_cost(string dataField, string? expectedResult)
     {
         using Context ctx = await Context.Create(new TestSpecProvider(Osaka.Instance));
         ctx.Test.RpcConfig.GasCap = 20_000;
@@ -1359,11 +1360,31 @@ public partial class EthRpcModuleTests
         string serialized = await ctx.Test.TestEthRpc("eth_estimateGas", transaction);
 
         JToken response = JToken.Parse(serialized);
+        string? result = response["result"]?.Value<string>();
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(response["result"]?.Value<string>(), Is.EqualTo(expectedResult), serialized);
-            Assert.That(response["error"]?["message"]?.Value<string>(), Is.EqualTo(expectedError), serialized);
+            Assert.That(response["error"], Is.Null, serialized);
+            if (expectedResult is null)
+                Assert.That(result is null ? 0 : Convert.ToUInt64(result, 16), Is.GreaterThan(GasCostOf.Transaction), serialized);
+            else
+                Assert.That(result, Is.EqualTo(expectedResult), serialized);
         }
+    }
+
+    /// <summary>The search can reach the block gas limit, so a gas cap below it does not fail the estimate.</summary>
+    [Test]
+    public async Task Estimate_gas_search_reaches_the_block_gas_limit_above_the_gas_cap()
+    {
+        using Context ctx = await Context.Create();
+        ulong blockGasLimit = ctx.Test.BlockTree.FindHeadBlock()!.Header.GasLimit;
+        ctx.Test.RpcConfig.GasCap = blockGasLimit / 4;
+        ulong threshold = blockGasLimit / 2;
+        Address needsGas = new("0x000000000000000000000000000000000000c0de");
+        object stateOverride = JsonSerializer.Deserialize<object>($$$"""{"{{{needsGas}}}":{"code":"{{{EthRpcSimulateTestsBase.NeedsGasCode(threshold)}}}"}}""")!;
+
+        ulong gas = await EstimateGas(ctx, needsGas, stateOverride);
+
+        Assert.That(gas, Is.GreaterThanOrEqualTo(threshold).And.LessThanOrEqualTo(blockGasLimit));
     }
 
     [Test]
