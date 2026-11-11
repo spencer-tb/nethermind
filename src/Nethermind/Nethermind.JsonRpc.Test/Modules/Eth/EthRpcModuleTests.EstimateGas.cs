@@ -1758,6 +1758,24 @@ public partial class EthRpcModuleTests
         Assert.That(serialized, Is.EqualTo($"{{\"jsonrpc\":\"2.0\",\"result\":\"{expected.ToHexString(true)}\",\"id\":67}}"));
     }
 
+    /// <summary>
+    /// After EIP-8037 the highest gas limit is at most TX_MAX_TOTAL_GAS_LIMIT, so a request gas above it is lowered to
+    /// it rather than failing the run at the top of the search, when no RPC gas cap lowers it first.
+    /// </summary>
+    [TestCase(0UL, TestName = "Eth_estimateGas_lowers_a_request_gas_above_the_eip8037_total_cap(uncapped)")]
+    [TestCase(1_000_000_000_000UL, TestName = "Eth_estimateGas_lowers_a_request_gas_above_the_eip8037_total_cap(above cap)")]
+    public async Task Eth_estimateGas_lowers_a_request_gas_above_the_eip8037_total_cap(ulong gasCap)
+    {
+        using Context ctx = await Context.CreateWithAmsterdamEnabled();
+        ctx.Test.RpcConfig.GasCap = gasCap;
+        object stateOverride = JsonSerializer.Deserialize<object>(
+            $$$"""{"{{{EthRpcSimulateTestsBase.GasProbeContractAddress}}}":{"code":"{{{EthRpcSimulateTestsBase.GasProbeBytecode}}}"}}""")!;
+
+        ulong gas = await EstimateGas(ctx, EthRpcSimulateTestsBase.GasProbeContractAddress, stateOverride, gas: Eip8037Constants.TxMaxTotalGasLimit + 1_000_000);
+
+        Assert.That(gas, Is.LessThan(100_000ul), "a call needing far less than the cap gets an estimate");
+    }
+
     [Test]
     public async Task Eth_estimateGas_value_transfer_creating_account_is_within_the_error_margin()
     {

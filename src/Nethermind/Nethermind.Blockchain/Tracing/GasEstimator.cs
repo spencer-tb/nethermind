@@ -65,9 +65,12 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
 
         ulong hi = tx.GasLimit >= GasCostOf.Transaction ? tx.GasLimit : header.GasLimit;
 
-        // EIP-7825 caps the gas of a single transaction until EIP-8037 lifts the cap to both gas dimensions.
+        // EIP-7825 caps the gas of a single transaction until EIP-8037 lifts the cap to both gas dimensions, which it
+        // caps together at TX_MAX_TOTAL_GAS_LIMIT.
         if (hi > Eip7825Constants.DefaultTxGasLimitCap && spec.IsEip7825Enabled && !spec.IsEip8037Enabled)
             hi = Eip7825Constants.DefaultTxGasLimitCap;
+        else if (hi > Eip8037Constants.TxMaxTotalGasLimit && spec.IsEip8037Enabled)
+            hi = Eip8037Constants.TxMaxTotalGasLimit;
 
         UInt256 feeCap = tx.MaxFeePerGas;
         if (!feeCap.IsZero)

@@ -252,6 +252,18 @@ public class GasEstimatorTests
         Assert.That(processor.GasLimits, Is.EqualTo(new[] { Eip7825Constants.DefaultTxGasLimitCap }), "the probe runs at the EIP-7825 cap");
     }
 
+    [TestCase(Eip8037Constants.TxMaxTotalGasLimit + 1, TestName = "Above the total cap")]
+    [TestCase(2 * Eip8037Constants.TxMaxTotalGasLimit, TestName = "Twice the total cap")]
+    public void Estimate_under_eip8037_caps_the_highest_gas_limit_at_the_total_cap(ulong requestedGas)
+    {
+        ScriptedTransactionProcessor processor = new(gasUsed: 30_000, peakGas: 30_000, requiredGasLimit: ulong.MaxValue);
+        Transaction tx = Build.A.Transaction.WithTo(TestItem.AddressB).WithData(CallData).WithGasLimit(requestedGas).WithGasPrice(0).TestObject;
+
+        GasEstimation estimation = Estimate(processor, tx, CreateStateProvider(UInt256.Zero, isContract: true), spec: Amsterdam.Instance, blockGasLimit: requestedGas);
+
+        Assert.That(processor.GasLimits, Is.EqualTo(new[] { Eip8037Constants.TxMaxTotalGasLimit }), "the probe runs at the EIP-8037 total cap");
+    }
+
     [Test]
     public void Estimate_gas_below_the_base_cost_is_bounded_by_the_block_gas_limit()
     {
