@@ -2106,6 +2106,38 @@ public partial class EthRpcModuleTests
         Assert.That(gas, Is.LessThan(Eip7825Constants.DefaultTxGasLimitCap), "estimate reaches past TX_MAX_GAS_LIMIT to fund the nested call from the reservoir");
     }
 
+    /// <summary>
+    /// After EIP-8037, a limit above TX_MAX_GAS_LIMIT is only sufficient if no more nested calls fail than at the
+    /// highest one, so a deployment that needs a reservoir for two maximum-size creations is not estimated at a limit
+    /// that starves the second.
+    /// </summary>
+    [Test]
+    public async Task Estimate_gas_after_eip8037_does_not_starve_the_second_of_two_creations_funded_by_the_reservoir()
+    {
+        using Context ctx = await Context.CreateWithAmsterdamEnabled();
+        // Creates two contracts of 24,576 zero bytes, about 37.6M state gas each, ignoring whether each succeeded, and
+        // deploys a word that is 1 only when both did:
+        //   PUSH6 (PUSH2 0x6000 PUSH1 0 RETURN) PUSH1 0 MSTORE (PUSH1 6 PUSH1 26 PUSH1 0 CREATE) x2
+        //   ISZERO ISZERO SWAP1 ISZERO ISZERO AND PUSH1 0 MSTORE PUSH1 32 PUSH1 0 RETURN
+        const string initCode = "0x656160006000f36000526006601a6000f06006601a6000f015159015151660005260206000f3";
+        const ulong gasLimit = 100_000_000;
+
+        object estimateRequest = JsonSerializer.Deserialize<object>($$"""{"from":"{{TestItem.AddressA}}","input":"{{initCode}}","gas":"0x{{gasLimit:x}}"}""")!;
+        string estimateResponse = await ctx.Test.TestEthRpc("eth_estimateGas", estimateRequest);
+        string? estimate = JToken.Parse(estimateResponse)["result"]?.Value<string>();
+#pragma warning disable NUnit2045 // The estimate must succeed before it is simulated.
+        Assert.That(estimate, Is.Not.Null, estimateResponse);
+#pragma warning restore NUnit2045
+
+        // Run the deployment at the estimate as a block runs it, with the EIP-8037 gas split.
+        object simulateRequest = JsonSerializer.Deserialize<object>(
+            $$$"""{"blockStateCalls":[{"blockOverrides":{"gasLimit":"0x{{{gasLimit:x}}}","baseFeePerGas":"0x0"},"calls":[{"from":"{{{TestItem.AddressA}}}","input":"{{{initCode}}}","gas":"{{{estimate}}}"}]}],"validation":true}""")!;
+        string simulateResponse = await ctx.Test.TestEthRpc("eth_simulateV1", simulateRequest, "latest");
+
+        JToken? call = JToken.Parse(simulateResponse)["result"]?[0]?["calls"]?[0];
+        Assert.That(call?["returnData"]?.Value<string>(), Is.EqualTo(Bytes.FromHexString("0x01").PadLeft(32).ToHexString(true)), $"a creation fails at the estimate {estimate}: {simulateResponse}");
+    }
+
     private static async Task<ulong> EstimateGas(Context ctx, Address to, object stateOverride, ulong? gas = null)
     {
         string gasField = gas is { } limit ? $",\"gas\":\"0x{limit:x}\"" : "";

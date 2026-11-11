@@ -126,16 +126,18 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
         // A gas limit is only sufficient if no more nested calls fail than at the highest one. Otherwise the search
         // can settle on a limit where an inner call runs out of gas, the caller catches the failure and the
         // transaction succeeds while doing something other than intended.
-        int allowedFailures = probe.FailedNestedCalls;
+        int failuresAtHi = probe.FailedNestedCalls;
+        int failuresAtCap = failuresAtHi;
 
         // EIP-8037: gas above TX_MAX_GAS_LIMIT only funds the state gas reservoir. A transaction whose nested call
-        // completes only with a reservoir would otherwise be sized past the cap, so the run at the cap is the
-        // reference too when it succeeds.
+        // completes only with a reservoir would otherwise be sized past the cap, so for a limit up to the cap the run
+        // at the cap is the reference too when it succeeds. Above the cap the highest limit stays the only reference,
+        // so a limit there cannot starve a nested call that the reservoir funds, such as a second creation.
         if (spec.IsEip8037Enabled && hi > Eip7825Constants.DefaultTxGasLimitCap)
         {
             Run capped = execution.Run(Eip7825Constants.DefaultTxGasLimitCap);
-            if (capped.Status == RunStatus.Succeeded && capped.FailedNestedCalls > allowedFailures)
-                allowedFailures = capped.FailedNestedCalls;
+            if (capped.Status == RunStatus.Succeeded && capped.FailedNestedCalls > failuresAtCap)
+                failuresAtCap = capped.FailedNestedCalls;
         }
 
         // EIP-150 withholds 1/64 of the gas at every call, so the peak gas plus a call stipend, scaled by 64/63,
@@ -147,7 +149,7 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
             if (run.Status == RunStatus.Rejected)
                 return GasEstimation.Rejected(run.Error!, optimistic);
 
-            if (run.Suffices(allowedFailures))
+            if (run.Suffices(AllowedFailures(optimistic)))
                 hi = optimistic;
             else
                 lo = optimistic;
@@ -164,13 +166,15 @@ public partial class GasEstimator(ITransactionProcessor transactionProcessor, IR
             if (run.Status == RunStatus.Rejected)
                 return GasEstimation.Rejected(run.Error!, mid);
 
-            if (run.Suffices(allowedFailures))
+            if (run.Suffices(AllowedFailures(mid)))
                 hi = mid;
             else
                 lo = mid;
         }
 
         return GasEstimation.Success(hi);
+
+        int AllowedFailures(ulong gasLimit) => gasLimit <= Eip7825Constants.DefaultTxGasLimitCap ? failuresAtCap : failuresAtHi;
     }
 
     /// <summary>Reports an execution failure at the highest gas limit that has no standard text, as it always was.</summary>
