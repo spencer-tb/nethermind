@@ -16,11 +16,26 @@ namespace Nethermind.Merge.Plugin.Data;
 /// </summary>
 public class BlobsBundleV2
 {
-    public BlobsBundleV2(Block block)
+    public BlobsBundleV2(Block block) : this(block, skipUnwrapped: false)
+    {
+    }
+
+    /// <summary>
+    /// Builds the bundle from the blob transactions that carry their network wrapper, leaving out those that come
+    /// without one, as the transactions of a testing payload taken from a block do.
+    /// </summary>
+    public static BlobsBundleV2 FromWrappedTransactions(Block block) => new(block, skipUnwrapped: true);
+
+    private BlobsBundleV2(Block block, bool skipUnwrapped)
     {
         int blobsCount = 0;
         foreach (Transaction? tx in block.Transactions)
         {
+            if (skipUnwrapped && !IsWrapped(tx))
+            {
+                continue;
+            }
+
             blobsCount += tx?.GetBlobCount() ?? 0;
         }
 
@@ -39,6 +54,11 @@ public class BlobsBundleV2
 
             if (tx is not { NetworkWrapper: ShardBlobNetworkWrapper { Version: ProofVersion.V1 } wrapper })
             {
+                if (skipUnwrapped)
+                {
+                    continue;
+                }
+
                 throw new ArgumentException("Shard blob transaction should contain network wrapper data");
             }
 
@@ -55,6 +75,9 @@ public class BlobsBundleV2
             }
         }
     }
+
+    private static bool IsWrapped(Transaction? tx) =>
+        tx is { NetworkWrapper: ShardBlobNetworkWrapper { Version: ProofVersion.V1 } };
 
     [JsonConstructor]
     public BlobsBundleV2(byte[][] commitments, byte[][] blobs, byte[][] proofs)

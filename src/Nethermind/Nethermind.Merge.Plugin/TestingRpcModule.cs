@@ -245,8 +245,11 @@ public class TestingRpcModule(
         processedBlock.ExecutionRequests ??= ExecutionRequestExtensions.EmptyRequests;
         processedBlock.Header.RequestsHash ??= ExecutionRequestExtensions.EmptyRequestsHash;
 
+        // The given transactions come as a block carries them, so a blob transaction may come without its network
+        // wrapper, and its blobs are then left out of the bundle.
+        BlobsBundleV2 blobsBundle = BlobsBundleV2.FromWrappedTransactions(processedBlock);
         return spec.IsEip7928Enabled
-            ? new GetPayloadV6DirectResponse(processedBlock, blockFees, new BlobsBundleV2(processedBlock), processedBlock.ExecutionRequests, shouldOverrideBuilder: false)
-            : new GetPayloadV5DirectResponse(processedBlock, blockFees, new BlobsBundleV2(processedBlock), processedBlock.ExecutionRequests, shouldOverrideBuilder: false);
+            ? new GetPayloadV6DirectResponse(processedBlock, blockFees, blobsBundle, processedBlock.ExecutionRequests, shouldOverrideBuilder: false)
+            : new GetPayloadV5DirectResponse(processedBlock, blockFees, blobsBundle, processedBlock.ExecutionRequests, shouldOverrideBuilder: false);
     }
 }
