@@ -534,6 +534,9 @@ public abstract partial class BlockchainTestBase
         if (isEngineTest && configProvider.GetConfig<IMergeConfig>() is MergeConfig mergeConfig)
         {
             mergeConfig.NewPayloadBlockProcessingTimeout = (int)EngineProcessingTimeout.TotalMilliseconds;
+            // A build test passes each payload's transactions as the payload carries them, so its blob
+            // transactions come without their network wrapper.
+            mergeConfig.TestingAllowUnwrappedBlobTransactions = BuildPayloads;
         }
 
         ILogManager componentLogManager = ComponentLogManagerOverride ?? _logManager;
