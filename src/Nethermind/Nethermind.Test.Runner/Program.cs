@@ -46,6 +46,9 @@ internal class Program
         public static Option<bool> EngineTest { get; } =
             new("--engineTest", "-e") { Description = "Run as engine test (blockchain_test_engine fixtures)." };
 
+        public static Option<bool> BuildTest { get; } =
+            new("--buildTest") { Description = "Run as build test (blockchain_test_engine fixtures: each payload expected to be valid is built through testing_buildBlockV1 and compared with the fixture's before it is imported)." };
+
         public static Option<bool> EngineXTest { get; } =
             new("--engineXTest") { Description = "Run as engine X test (blockchain_test_engine_x fixtures: the tests of each pre-allocation group in turn on one client)." };
 
@@ -128,6 +131,7 @@ internal class Program
             Options.StateTest,
             Options.BlockTest,
             Options.EngineTest,
+            Options.BuildTest,
             Options.EngineXTest,
             Options.EngineReorgTest,
             Options.TxTest,
@@ -192,6 +196,7 @@ internal class Program
     [
         ("blocktest", Options.BlockTest),
         ("enginetest", Options.EngineTest),
+        ("buildtest", Options.BuildTest),
     ];
 
     private static async Task<int> Run(ParseResult parseResult, Option<bool>? command, CancellationToken cancellationToken)
@@ -206,15 +211,16 @@ internal class Program
         bool isStateTest = parseResult.GetValue(Options.StateTest);
         bool isBlockTest = parseResult.GetValue(Options.BlockTest) || command == Options.BlockTest;
         bool isEngineTest = parseResult.GetValue(Options.EngineTest) || command == Options.EngineTest;
+        bool isBuildTest = parseResult.GetValue(Options.BuildTest) || command == Options.BuildTest;
         bool isEngineXTest = parseResult.GetValue(Options.EngineXTest);
         bool isEngineReorgTest = parseResult.GetValue(Options.EngineReorgTest);
         bool isTxTest = parseResult.GetValue(Options.TxTest);
         bool isZkEvmTest = parseResult.GetValue(Options.ZkEvmTest);
 
-        int testTypeCount = (isStateTest ? 1 : 0) + (isBlockTest ? 1 : 0) + (isEngineTest ? 1 : 0) + (isEngineXTest ? 1 : 0) + (isEngineReorgTest ? 1 : 0) + (isTxTest ? 1 : 0) + (isZkEvmTest ? 1 : 0);
+        int testTypeCount = (isStateTest ? 1 : 0) + (isBlockTest ? 1 : 0) + (isEngineTest ? 1 : 0) + (isBuildTest ? 1 : 0) + (isEngineXTest ? 1 : 0) + (isEngineReorgTest ? 1 : 0) + (isTxTest ? 1 : 0) + (isZkEvmTest ? 1 : 0);
         if (testTypeCount != 1)
         {
-            Console.Error.WriteLine("Please specify one of: blocktest, enginetest, --stateTest, --blockTest, --engineTest, --engineXTest, --engineReorgTest, --txTest, or --zkevmTest");
+            Console.Error.WriteLine("Please specify one of: blocktest, enginetest, buildtest, --stateTest, --blockTest, --engineTest, --buildTest, --engineXTest, --engineReorgTest, --txTest, or --zkevmTest");
             return 1;
         }
 
@@ -269,7 +275,7 @@ internal class Program
         int exitCode = 0;
         while (inputs.Count > 0)
         {
-            List<string>? files = CollectFiles(inputs, chunk, failOnUnreadablePath: isBlockTest || isEngineTest || isEngineXTest || isEngineReorgTest, skipPreAlloc: isEngineXTest);
+            List<string>? files = CollectFiles(inputs, chunk, failOnUnreadablePath: isBlockTest || isEngineTest || isBuildTest || isEngineXTest || isEngineReorgTest, skipPreAlloc: isEngineXTest);
             if (files is null)
             {
                 // Each stdin line is its own batch, so a bad path fails only its line and the session reads on.
@@ -278,7 +284,7 @@ internal class Program
                 files = [];
             }
 
-            if (isEngineTest || isBlockTest || isEngineXTest || isEngineReorgTest)
+            if (isEngineTest || isBuildTest || isBlockTest || isEngineXTest || isEngineReorgTest)
             {
                 // Compiled once and shared by the per-file runner instances.
                 Regex? filterRegex = filter is not null ? new Regex($"^({filter})", RegexOptions.Compiled) : null;
@@ -294,6 +300,7 @@ internal class Program
                     ParallelExecutionBatchRead: batchRead,
                     WithholdBlockAccessLists: parseResult.GetValue(Options.BalWithhold),
                     MatchExpectedExceptions: parseResult.GetValue(Options.MatchExceptions),
+                    BuildPayloads: isBuildTest,
                     PreWarming: preWarming,
                     BlockAccessListExecutionObserver: balReport && !trace ? new BlockAccessListExecutionReport(Console.Error) : null);
                 (List<EthereumTestResult> results, bool allFilesLoaded) = isEngineXTest

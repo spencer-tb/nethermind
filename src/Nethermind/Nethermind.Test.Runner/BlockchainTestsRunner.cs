@@ -25,6 +25,7 @@ public readonly record struct BlockchainTestsRunnerOptions(
     bool? ParallelExecutionBatchRead = null,
     bool WithholdBlockAccessLists = false,
     bool MatchExpectedExceptions = false,
+    bool BuildPayloads = false,
     PreWarmMode? PreWarming = null,
     IBlockAccessListExecutionReport? BlockAccessListExecutionObserver = null,
     Func<bool, string?>? ProgressUpdateFactory = null);
@@ -41,6 +42,7 @@ public class BlockchainTestsRunner(in BlockchainTestsRunnerOptions options, ITes
     protected override IBlockAccessListExecutionReport? BlockAccessListExecutionObserver => _blockAccessListExecutionObserver;
     // A rejection's reason is the consumer's to judge, from the client error each result reports, unless --match-exceptions asks for the reason check.
     protected override bool MatchExpectedExceptions => _matchExpectedExceptions;
+    protected override bool BuildPayloads => _buildPayloads;
     private readonly ConsoleColor _defaultColor = Console.ForegroundColor;
     private readonly ITestSourceLoader? _testsSource = testsSource;
     private static readonly IJsonSerializer _serializer = new EthereumJsonSerializer();
@@ -56,6 +58,7 @@ public class BlockchainTestsRunner(in BlockchainTestsRunnerOptions options, ITes
     private readonly bool? _parallelExecutionBatchRead = options.ParallelExecutionBatchRead;
     private readonly bool _withholdBlockAccessLists = options.WithholdBlockAccessLists;
     private readonly bool _matchExpectedExceptions = options.MatchExpectedExceptions;
+    private readonly bool _buildPayloads = options.BuildPayloads;
     private readonly PreWarmMode? _preWarming = options.PreWarming;
     private readonly IBlockAccessListExecutionReport? _blockAccessListExecutionObserver = options.BlockAccessListExecutionObserver;
     private readonly Func<bool, string?>? _progressUpdateFactory = options.ProgressUpdateFactory;
@@ -191,6 +194,7 @@ public class BlockchainTestsRunner(in BlockchainTestsRunnerOptions options, ITes
         test.ChainId = _chainId;
         // Kept outside the run so a test that throws still reports what was rejected before it did.
         List<BlockRejection> rejections = [];
+        PayloadBuildOutcome? buildOutcome = _buildPayloads ? new() : null;
 
         try
         {
@@ -198,7 +202,7 @@ public class BlockchainTestsRunner(in BlockchainTestsRunnerOptions options, ITes
                 return await RunEngineReorgTest(engineReorgTest);
 
             if (!_trace)
-                return await RunTest(test, rejections: rejections);
+                return await RunTest(test, rejections: rejections, buildOutcome: buildOutcome);
 
             ISpecProvider specProvider = CreateSpecProvider(test);
             // Intentionally created per test: each test emits an independent JSONL trace,
@@ -207,11 +211,16 @@ public class BlockchainTestsRunner(in BlockchainTestsRunnerOptions options, ITes
                 new() { EnableMemory = _traceMemory, DisableStack = _excludeStack },
                 specProvider);
 
-            return await RunTest(test, tracer: tracer, specProvider: specProvider, rejections: rejections);
+            return await RunTest(test, tracer: tracer, specProvider: specProvider, rejections: rejections, buildOutcome: buildOutcome);
         }
         catch (Exception ex)
         {
-            return new EthereumTestResult(test.Name, test.ForkName, ex.ToString()) { Rejections = rejections };
+            return new EthereumTestResult(test.Name, test.ForkName, ex.ToString())
+            {
+                Rejections = rejections,
+                Built = buildOutcome?.Built,
+                Mismatches = buildOutcome?.Mismatches,
+            };
         }
     }
 
