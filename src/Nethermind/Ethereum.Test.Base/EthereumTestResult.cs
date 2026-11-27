@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Nethermind.Core.Crypto;
 
@@ -61,6 +62,41 @@ namespace Ethereum.Test.Base
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<BlockRejection>? Rejections { get; set; }
+
+        /// <summary>
+        /// The number of payloads the client built. Only build test results carry it.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? Built { get; set; }
+
+        /// <summary>
+        /// Every field in which a built payload differs from the fixture's, in fixture order. Only build test
+        /// results carry it.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<BuildMismatch>? Mismatches { get; set; }
+    }
+
+    /// <param name="Index">The payload's position in the fixture's <c>engineNewPayloads</c>.</param>
+    /// <param name="Field">The field's name in the payload JSON, or <c>executionRequests</c>.</param>
+    /// <param name="Expected">The fixture's value, as in its JSON.</param>
+    /// <param name="Got">The built payload's value, as in its JSON.</param>
+    public sealed record BuildMismatch(int Index, string Field, JsonElement Expected, JsonElement Got);
+
+    /// <summary>
+    /// What building an engine fixture's valid payloads found. Kept outside the run so that a test that throws still
+    /// reports it.
+    /// </summary>
+    public sealed class PayloadBuildOutcome
+    {
+        /// <summary>The number of payloads the client built.</summary>
+        public int Built { get; set; }
+
+        /// <summary>The number of payloads the client refused to build.</summary>
+        public int Refused { get; set; }
+
+        /// <summary>Every field in which a built payload differs from the fixture's, in fixture order.</summary>
+        public List<BuildMismatch> Mismatches { get; } = [];
     }
 
     /// <param name="Index">The block's position in the fixture's <c>blocks</c>, or the payload's in <c>engineNewPayloads</c>.</param>

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -101,6 +102,13 @@ public abstract partial class BlockchainTestBase
     /// client's validation error against the fixture's expected exception.
     /// </summary>
     protected virtual bool MatchExpectedExceptions => true;
+
+    /// <summary>
+    /// Override to build each engine payload the fixture expects to be valid through <c>testing_buildBlockV1</c>
+    /// before it is imported, and compare the built payload with the fixture's. Payloads expected to be invalid are
+    /// then skipped.
+    /// </summary>
+    protected virtual bool BuildPayloads => false;
 
     /// <summary>
     /// Override to replace the log manager used by internal Nethermind components.
@@ -199,7 +207,8 @@ public abstract partial class BlockchainTestBase
         bool failOnInvalidRlp = true,
         ITestBlockTracer? tracer = null,
         ISpecProvider? specProvider = null,
-        List<BlockRejection>? rejections = null)
+        List<BlockRejection>? rejections = null,
+        PayloadBuildOutcome? buildOutcome = null)
     {
         Assert.That(test.LoadFailure, Is.Null, $"test data loading failure in {test.Name}");
         rejections ??= [];
@@ -258,7 +267,11 @@ public abstract partial class BlockchainTestBase
             {
                 // engine test — route through JsonRpcService for realistic deserialization
                 (IJsonRpcService rpcService, JsonRpcContext rpcContext) = CreateEngineRpc(container);
-                Result<string> payloadResult = await RunNewPayloads(test.EngineNewPayloads, rpcService, rpcContext, blockchainProcessingQueue, parentHeader.Hash!, engineWitnessDifferences, rejectionRecorder, MatchExpectedExceptions);
+                PayloadBuilder? builder = BuildPayloads
+                    ? new PayloadBuilder(rpcService, container.Resolve<IBlocksConfig>(), rejectionRecorder, buildOutcome ??= new PayloadBuildOutcome())
+                    : null;
+                Result<string> payloadResult = await RunNewPayloads(test.EngineNewPayloads, rpcService, rpcContext, blockchainProcessingQueue, parentHeader.Hash!, engineWitnessDifferences, rejectionRecorder, MatchExpectedExceptions,
+                    buildPayload: builder is null ? null : builder.Build);
                 lastPayloadStatus = payloadResult.Data ?? "";
                 lastValidationError = payloadResult.Error;
             }
@@ -296,6 +309,12 @@ public abstract partial class BlockchainTestBase
             // zkEVM witness assertions. Engine-path diffs were gathered while driving
             // engine_newPayloadWithWitnessV*; the RLP path regenerates the witness post-hoc here.
             differences.AddRange(engineWitnessDifferences);
+            if (buildOutcome is not null)
+            {
+                differences.AddRange(buildOutcome.Mismatches.Select(static m => $"payload {m.Index}: the built {m.Field} differs from the fixture's"));
+                if (buildOutcome.Refused > 0)
+                    differences.Add($"the client refused to build {buildOutcome.Refused} payloads");
+            }
             if (test.Blocks is not null && HasAnyExecutionWitness(test))
             {
                 IWitnessGeneratingBlockProcessingEnvFactory witnessFactory =
@@ -319,6 +338,8 @@ public abstract partial class BlockchainTestBase
                 LastBlockHash = headBlock?.Hash,
                 LastPayloadStatus = string.IsNullOrEmpty(lastPayloadStatus) ? null : lastPayloadStatus,
                 Rejections = rejections,
+                Built = buildOutcome?.Built,
+                Mismatches = buildOutcome?.Mismatches,
                 Error = !testPassed
                     ? string.Join("; ", differences)
                     : lastValidationError,
@@ -513,6 +534,9 @@ public abstract partial class BlockchainTestBase
         if (isEngineTest && configProvider.GetConfig<IMergeConfig>() is MergeConfig mergeConfig)
         {
             mergeConfig.NewPayloadBlockProcessingTimeout = (int)EngineProcessingTimeout.TotalMilliseconds;
+            // A build test passes each payload's transactions as the payload carries them, so its blob
+            // transactions come without their network wrapper.
+            mergeConfig.TestingAllowUnwrappedBlobTransactions = BuildPayloads;
         }
 
         ILogManager componentLogManager = ComponentLogManagerOverride ?? _logManager;
@@ -710,7 +734,12 @@ public abstract partial class BlockchainTestBase
     /// carried a validation error, that error in <see cref="Result{TData}.Error"/> (an expected
     /// rejection does not fail the test, so the status is still populated).
     /// </returns>
-    private static async Task<Result<string>> RunNewPayloads(TestEngineNewPayloadsJson[]? newPayloads, IJsonRpcService rpcService, JsonRpcContext rpcContext, IBlockProcessingQueue processingQueue, Hash256 initialHeadHash, List<string> witnessDifferences, RejectionRecorder rejectionRecorder, bool matchExpectedExceptions, bool finalizeHeads = true, Dictionary<Hash256, string>? firstRejections = null)
+    /// <param name="buildPayload">
+    /// When set, called with each payload's index, the payload and its newPayload and forkchoiceUpdated versions before
+    /// the payload is imported; payloads expected to be invalid are then skipped, neither built nor imported.
+    /// </param>
+    private static async Task<Result<string>> RunNewPayloads(TestEngineNewPayloadsJson[]? newPayloads, IJsonRpcService rpcService, JsonRpcContext rpcContext, IBlockProcessingQueue processingQueue, Hash256 initialHeadHash, List<string> witnessDifferences, RejectionRecorder rejectionRecorder, bool matchExpectedExceptions, bool finalizeHeads = true, Dictionary<Hash256, string>? firstRejections = null,
+        Func<int, TestEngineNewPayloadsJson, int, int, Task>? buildPayload = null)
     {
         if (newPayloads is null || newPayloads.Length == 0)
         {
@@ -739,6 +768,13 @@ public abstract partial class BlockchainTestBase
                 throw new FormatException($"Invalid ForkChoiceUpdatedVersion: '{enginePayload.ForkChoiceUpdatedVersion}'");
             string? validationError = JsonToEthereumTest.ParseValidationError(enginePayload, newPayloadVersion);
             int? expectedErrorCode = JsonToEthereumTest.ParseErrorCode(enginePayload);
+
+            if (buildPayload is not null)
+            {
+                if (validationError is not null || expectedErrorCode is not null)
+                    continue;
+                await buildPayload(payloadIndex, enginePayload, newPayloadVersion, fcuVersion);
+            }
 
             // Only an unmutated, expected-VALID reference witness exercises engine_newPayloadWithWitnessV*; EIP-8025
             // mutated payloads go through the plain endpoint (their witness is a corrupted reference useful for stateless exec).
@@ -1525,6 +1561,101 @@ public abstract partial class BlockchainTestBase
 
         public void OnSequentialRetry(Block block, Exception parallelError, Exception? sequentialError) =>
             inner.OnSequentialRetry(block, parallelError, sequentialError);
+    }
+
+    /// <summary>
+    /// Builds the block of each engine payload the fixture expects to be valid through <c>testing_buildBlockV1</c>, on
+    /// the payload's parent and from its attributes, transactions and extra data, and records every field in which the
+    /// fixture's payload differs from the built one. A build the client refuses is a rejection.
+    /// </summary>
+    private sealed class PayloadBuilder(IJsonRpcService rpcService, IBlocksConfig blocksConfig, RejectionRecorder rejectionRecorder, PayloadBuildOutcome outcome)
+    {
+        private static readonly JsonElement Null = JsonDocument.Parse("null").RootElement.Clone();
+        private static readonly EthereumJsonSerializer Serializer = new();
+        private readonly JsonRpcContext _context = new(RpcEndpoint.Http, url: new JsonRpcUrl(Uri.UriSchemeHttp, "localhost", 8545, RpcEndpoint.Http, false, ["testing"]));
+
+        public async Task Build(int index, TestEngineNewPayloadsJson payload, int newPayloadVersion, int fcuVersion)
+        {
+            JsonElement want = payload.Params[0];
+            StringBuilder attributes = new();
+            attributes.Append("{\"timestamp\":").Append(want.GetProperty("timestamp").GetRawText())
+                .Append(",\"prevRandao\":").Append(want.GetProperty("prevRandao").GetRawText())
+                .Append(",\"suggestedFeeRecipient\":").Append(want.GetProperty("feeRecipient").GetRawText());
+            if (want.TryGetProperty("withdrawals", out JsonElement withdrawals) && withdrawals.ValueKind != JsonValueKind.Null)
+                attributes.Append(",\"withdrawals\":").Append(withdrawals.GetRawText());
+            // The parent beacon block root is a newPayload param from V3 on.
+            if (newPayloadVersion >= 3)
+                attributes.Append(",\"parentBeaconBlockRoot\":").Append(payload.Params[2].GetRawText());
+            // The slot number and the gas limit target are attributes from forkchoiceUpdatedV4 on. Before, the
+            // builder's own gas target is set to the payload's gas limit, which a valid payload reaches in one step.
+            // From V4 on the builder has no target of its own, so only the attribute can reach the gas limit.
+            if (fcuVersion >= 4)
+            {
+                attributes.Append(",\"slotNumber\":").Append(want.GetProperty("slotNumber").GetRawText())
+                    .Append(",\"targetGasLimit\":").Append(want.GetProperty("gasLimit").GetRawText());
+            }
+            attributes.Append('}');
+            blocksConfig.TargetBlockGasLimit = fcuVersion >= 4 ? null : Convert.ToUInt64(want.GetProperty("gasLimit").GetString(), 16);
+
+            string paramsJson = $"[{want.GetProperty("parentHash").GetRawText()},{attributes},{want.GetProperty("transactions").GetRawText()},{want.GetProperty("extraData").GetRawText()}]";
+            JsonRpcResponse response = await SendRpc(rpcService, _context, "testing_buildBlockV1", paramsJson);
+            if (TryGetRpcError(response, out int errorCode, out string? errorMessage))
+            {
+                rejectionRecorder.Record(index, null, DescribeRpcRejection(response, errorCode, errorMessage));
+                outcome.Refused++;
+                return;
+            }
+
+            outcome.Built++;
+            // In process the service answers with the module's own result wrapper.
+            object? result = response switch
+            {
+                IResultWrapper { Result.ResultType: ResultType.Success } wrapper => wrapper.Data,
+                JsonRpcSuccessResponse success => success.Result,
+                _ => throw new AssertionException($"testing_buildBlockV1 returned unexpected response type {response.GetType().FullName}")
+            };
+            using JsonDocument built = JsonDocument.Parse(Serializer.Serialize(result));
+            JsonElement got = built.RootElement.GetProperty("executionPayload");
+            // Only the fixture's fields: before Amsterdam the method returns an ExecutionPayloadV3, so a block before
+            // Cancun comes back with Cancun's fields, and the block hash already covers the header the client built.
+            foreach (JsonProperty field in want.EnumerateObject())
+                Compare(index, field.Name, field.Value, Property(got, field.Name));
+            // The execution requests are a newPayload param from V4 on.
+            if (newPayloadVersion >= 4)
+                Compare(index, "executionRequests", payload.Params[3], Property(built.RootElement, "executionRequests"));
+        }
+
+        private void Compare(int index, string field, JsonElement expected, JsonElement got)
+        {
+            if (!JsonEquals(expected, got))
+                outcome.Mismatches.Add(new BuildMismatch(index, field, expected.Clone(), got.Clone()));
+        }
+
+        private static JsonElement Property(JsonElement element, string name) =>
+            element.TryGetProperty(name, out JsonElement value) ? value : Null;
+
+        /// <summary>
+        /// Compares two JSON values as values rather than text: a missing field equals null, objects compare by their
+        /// fields in any order, and strings, which carry the payload's hex, compare regardless of case.
+        /// </summary>
+        private static bool JsonEquals(JsonElement a, JsonElement b)
+        {
+            if (a.ValueKind != b.ValueKind)
+                return false;
+            switch (a.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    HashSet<string> names = [.. a.EnumerateObject().Select(static p => p.Name), .. b.EnumerateObject().Select(static p => p.Name)];
+                    return names.All(name => JsonEquals(Property(a, name), Property(b, name)));
+                case JsonValueKind.Array:
+                    return a.GetArrayLength() == b.GetArrayLength()
+                        && a.EnumerateArray().Zip(b.EnumerateArray()).All(static pair => JsonEquals(pair.First, pair.Second));
+                case JsonValueKind.String:
+                    return string.Equals(a.GetString(), b.GetString(), StringComparison.OrdinalIgnoreCase);
+                default:
+                    return a.GetRawText() == b.GetRawText();
+            }
+        }
     }
 
     /// <summary>

@@ -181,6 +181,34 @@ public class TestingRpcModuleTests
         }
     }
 
+    [Test]
+    public async Task Leaves_blob_transaction_without_cell_proofs_out_of_the_bundle_when_allowed([Values] bool amsterdam)
+    {
+        IReleaseSpec spec = amsterdam ? Amsterdam.Instance : Osaka.Instance;
+        (TestingRpcModule module, Hash256 parentHash, BlockHeader parentHeader) = CreateBuildTestingModule(
+            spec: spec, slotNumber: amsterdam ? 1UL : null,
+            mergeConfig: new MergeConfig { TestingAllowUnwrappedBlobTransactions = true });
+        Transaction transaction = Core.Test.Builders.Build.A.Transaction
+            .WithShardBlobTxTypeAndFields(blobCount: 1, isMempoolTx: false).SignedAndResolved().TestObject;
+        byte[][] txRlps = EncodeTransactions([transaction], out _);
+
+        string json = await RpcTest.TestSerializedRequest<ITestingRpcModule>(
+            module,
+            nameof(ITestingRpcModule.testing_buildBlockV1),
+            parentHash,
+            CreateDefaultPayloadAttributes(parentHeader, slotNumber: amsterdam ? 2UL : null),
+            txRlps);
+
+        using JsonDocument doc = JsonDocument.Parse(json);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(doc.RootElement.TryGetProperty("error", out _), Is.False, json);
+            JsonElement result = doc.RootElement.GetProperty("result");
+            Assert.That(result.GetProperty("executionPayload").GetProperty("transactions").GetArrayLength(), Is.EqualTo(1));
+            Assert.That(result.GetProperty("blobsBundle").GetProperty("blobs").GetArrayLength(), Is.Zero);
+        }
+    }
+
     [TestCase(true, 1, Description = "null txRlps uses mempool")]
     [TestCase(false, 0, Description = "empty txRlps builds empty block")]
     public async Task Tx_source_behavior(bool useNull, int expectedTxCount)
@@ -385,7 +413,8 @@ public class TestingRpcModuleTests
         Func<Block, Block?>? processOverride = null,
         ITxSource? txSource = null,
         Action<Block, ProcessingOptions>? onProcessWithOptions = null,
-        IBlockTree? blockTree = null)
+        IBlockTree? blockTree = null,
+        IMergeConfig? mergeConfig = null)
     {
         BlockHeader parentHeader = CreateDefaultParentHeader(slotNumber);
 
@@ -412,7 +441,7 @@ public class TestingRpcModuleTests
         IBlockFinder blockFinder = Substitute.For<IBlockFinder>();
         IBlockTree tree = blockTree ?? Substitute.For<IBlockTree>();
 
-        TestingRpcModule module = new(blockProducerEnvFactory, mainStateBlockProducerEnvFactory, gasLimitCalculator, specProvider, blockFinder, tree, Substitute.For<IProcessExitSource>(), Substitute.For<IBlockProcessingQueue>(), LimboLogs.Instance);
+        TestingRpcModule module = new(blockProducerEnvFactory, mainStateBlockProducerEnvFactory, gasLimitCalculator, specProvider, blockFinder, tree, Substitute.For<IProcessExitSource>(), Substitute.For<IBlockProcessingQueue>(), LimboLogs.Instance, mergeConfig);
         _disposables.Add(module);
         return (module, tree, blockFinder, parentHeader);
     }
@@ -422,10 +451,11 @@ public class TestingRpcModuleTests
         ulong? slotNumber = null,
         Action<Block>? onProcess = null,
         Func<Block, Block?>? processOverride = null,
-        ITxSource? txSource = null)
+        ITxSource? txSource = null,
+        IMergeConfig? mergeConfig = null)
     {
         (TestingRpcModule module, _, IBlockFinder blockFinder, BlockHeader parentHeader) =
-            CreateModuleWithMocks(spec, slotNumber, onProcess, processOverride, txSource);
+            CreateModuleWithMocks(spec, slotNumber, onProcess, processOverride, txSource, mergeConfig: mergeConfig);
 
         Hash256 parentHash = parentHeader.Hash!;
         Block parentBlock = new(parentHeader, [], [], []);

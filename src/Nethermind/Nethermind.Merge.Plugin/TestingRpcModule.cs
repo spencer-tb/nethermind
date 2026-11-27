@@ -39,10 +39,12 @@ public class TestingRpcModule(
     IBlockTree blockTree,
     IProcessExitSource processExitSource,
     IBlockProcessingQueue processingQueue,
-    ILogManager logManager)
+    ILogManager logManager,
+    IMergeConfig? mergeConfig = null)
     : ITestingRpcModule, IDisposable
 {
     private readonly ILogger _logger = logManager.GetClassLogger<TestingRpcModule>();
+    private readonly bool _allowUnwrappedBlobTransactions = mergeConfig?.TestingAllowUnwrappedBlobTransactions ?? false;
     private readonly SemaphoreSlim _commitLock = new(1, 1);
 
     // The commit pass updates the head without re-processing, so it must run on the main
@@ -71,7 +73,7 @@ public class TestingRpcModule(
             return ResultWrapper<object>.Fail(produced.Result.Error!, produced.ErrorCode);
 
         if (_logger.IsDebug) _logger.Debug($"testing_buildBlockV1 produced payload for block {produced.Data.Block.Header.ToString(BlockHeader.Format.Short)}.");
-        return ResultWrapper<object>.Success(CreateGetPayloadResult(produced.Data.Block, feesTracer.Fees, produced.Data.Spec));
+        return ResultWrapper<object>.Success(CreateGetPayloadResult(produced.Data.Block, feesTracer.Fees, produced.Data.Spec, _allowUnwrappedBlobTransactions));
     }
 
     public async Task<ResultWrapper<Hash256>> testing_commitBlockV1(
@@ -240,13 +242,20 @@ public class TestingRpcModule(
                 ?? throw new RlpReaderException("Transaction decoding returned null.");
     }
 
-    private static object CreateGetPayloadResult(Block processedBlock, UInt256 blockFees, IReleaseSpec spec)
+    /// <param name="allowUnwrappedBlobTransactions">
+    /// Whether a blob transaction that came without its network wrapper, as a block carries it, is left out of the
+    /// blobs bundle instead of failing the call.
+    /// </param>
+    private static object CreateGetPayloadResult(Block processedBlock, UInt256 blockFees, IReleaseSpec spec, bool allowUnwrappedBlobTransactions)
     {
         processedBlock.ExecutionRequests ??= ExecutionRequestExtensions.EmptyRequests;
         processedBlock.Header.RequestsHash ??= ExecutionRequestExtensions.EmptyRequestsHash;
 
+        BlobsBundleV2 blobsBundle = allowUnwrappedBlobTransactions
+            ? BlobsBundleV2.FromWrappedTransactions(processedBlock)
+            : new(processedBlock);
         return spec.IsEip7928Enabled
-            ? new GetPayloadV6DirectResponse(processedBlock, blockFees, new BlobsBundleV2(processedBlock), processedBlock.ExecutionRequests, shouldOverrideBuilder: false)
-            : new GetPayloadV5DirectResponse(processedBlock, blockFees, new BlobsBundleV2(processedBlock), processedBlock.ExecutionRequests, shouldOverrideBuilder: false);
+            ? new GetPayloadV6DirectResponse(processedBlock, blockFees, blobsBundle, processedBlock.ExecutionRequests, shouldOverrideBuilder: false)
+            : new GetPayloadV5DirectResponse(processedBlock, blockFees, blobsBundle, processedBlock.ExecutionRequests, shouldOverrideBuilder: false);
     }
 }

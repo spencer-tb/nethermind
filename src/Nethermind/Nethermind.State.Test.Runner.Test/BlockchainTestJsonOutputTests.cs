@@ -87,12 +87,13 @@ public class BlockchainTestJsonOutputTests
 
     [TestCase("blocktest", "--blockTest")]
     [TestCase("enginetest", "--engineTest")]
+    [TestCase("buildtest", "--buildTest")]
     public async Task Each_command_runs_the_same_tests_as_its_option(string command, string option)
     {
         string fixture = command switch
         {
             "blocktest" => WriteFixture(),
-            "enginetest" => WriteEngineFixture("clean_engine", []),
+            "enginetest" or "buildtest" => WriteEngineFixture("clean_engine", []),
             _ => throw new ArgumentOutOfRangeException(nameof(command))
         };
         (string commandStdout, string commandStderr) = await RunNethtest(fixture, command);
