@@ -188,13 +188,17 @@ public class BlockchainTestsRunner(in BlockchainTestsRunnerOptions options, ITes
         if (_filterRegex is not null && test.Name is not null && !_filterRegex.IsMatch(test.Name))
             return null;
 
+        PayloadBuildOutcome? buildOutcome = _buildPayloads ? new() : null;
         if (test.LoadFailure is not null)
-            return new EthereumTestResult(test.Name, test.LoadFailure) { Rejections = [] };
+            return new EthereumTestResult(test.Name, test.LoadFailure) { Rejections = [], Built = buildOutcome?.Built, Mismatches = buildOutcome?.Mismatches };
+
+        // A build test builds engine payloads, so a fixture without any is input it cannot run.
+        if (_buildPayloads && test.EngineNewPayloads is null)
+            return new EthereumTestResult(test.Name, "buildtest runs blockchain_test_engine fixtures, and this one has no engineNewPayloads") { Rejections = [], Built = 0, Mismatches = [] };
 
         test.ChainId = _chainId;
         // Kept outside the run so a test that throws still reports what was rejected before it did.
         List<BlockRejection> rejections = [];
-        PayloadBuildOutcome? buildOutcome = _buildPayloads ? new() : null;
 
         try
         {

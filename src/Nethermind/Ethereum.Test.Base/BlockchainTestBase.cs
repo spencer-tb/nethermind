@@ -1564,16 +1564,9 @@ public abstract partial class BlockchainTestBase
     }
 
     /// <summary>
-    /// Collects one test's rejected blocks or payloads, ordered by their index in the fixture, one entry per index.
-    /// </summary>
-    /// <remarks>
-    /// The processor reports a rejection by block hash on its own thread, so hashes are registered at decoding,
-    /// before any block is suggested.
-    /// </remarks>
-    /// <summary>
     /// Builds the block of each engine payload the fixture expects to be valid through <c>testing_buildBlockV1</c>, on
     /// the payload's parent and from its attributes, transactions and extra data, and records every field in which the
-    /// built payload differs from the fixture's. A build the client refuses is a rejection.
+    /// fixture's payload differs from the built one. A build the client refuses is a rejection.
     /// </summary>
     private sealed class PayloadBuilder(IJsonRpcService rpcService, IBlocksConfig blocksConfig, RejectionRecorder rejectionRecorder, PayloadBuildOutcome outcome)
     {
@@ -1595,13 +1588,14 @@ public abstract partial class BlockchainTestBase
                 attributes.Append(",\"parentBeaconBlockRoot\":").Append(payload.Params[2].GetRawText());
             // The slot number and the gas limit target are attributes from forkchoiceUpdatedV4 on. Before, the
             // builder's own gas target is set to the payload's gas limit, which a valid payload reaches in one step.
+            // From V4 on the builder has no target of its own, so only the attribute can reach the gas limit.
             if (fcuVersion >= 4)
             {
                 attributes.Append(",\"slotNumber\":").Append(want.GetProperty("slotNumber").GetRawText())
                     .Append(",\"targetGasLimit\":").Append(want.GetProperty("gasLimit").GetRawText());
             }
             attributes.Append('}');
-            blocksConfig.TargetBlockGasLimit = Convert.ToUInt64(want.GetProperty("gasLimit").GetString(), 16);
+            blocksConfig.TargetBlockGasLimit = fcuVersion >= 4 ? null : Convert.ToUInt64(want.GetProperty("gasLimit").GetString(), 16);
 
             string paramsJson = $"[{want.GetProperty("parentHash").GetRawText()},{attributes},{want.GetProperty("transactions").GetRawText()},{want.GetProperty("extraData").GetRawText()}]";
             JsonRpcResponse response = await SendRpc(rpcService, _context, "testing_buildBlockV1", paramsJson);
@@ -1622,11 +1616,10 @@ public abstract partial class BlockchainTestBase
             };
             using JsonDocument built = JsonDocument.Parse(Serializer.Serialize(result));
             JsonElement got = built.RootElement.GetProperty("executionPayload");
-            IEnumerable<string> fields = want.EnumerateObject().Select(static p => p.Name)
-                .Union(got.EnumerateObject().Select(static p => p.Name))
-                .Order(StringComparer.Ordinal);
-            foreach (string field in fields)
-                Compare(index, field, Property(want, field), Property(got, field));
+            // Only the fixture's fields: before Amsterdam the method returns an ExecutionPayloadV3, so a block before
+            // Cancun comes back with Cancun's fields, and the block hash already covers the header the client built.
+            foreach (JsonProperty field in want.EnumerateObject())
+                Compare(index, field.Name, field.Value, Property(got, field.Name));
             // The execution requests are a newPayload param from V4 on.
             if (newPayloadVersion >= 4)
                 Compare(index, "executionRequests", payload.Params[3], Property(built.RootElement, "executionRequests"));
@@ -1665,6 +1658,13 @@ public abstract partial class BlockchainTestBase
         }
     }
 
+    /// <summary>
+    /// Collects one test's rejected blocks or payloads, ordered by their index in the fixture, one entry per index.
+    /// </summary>
+    /// <remarks>
+    /// The processor reports a rejection by block hash on its own thread, so hashes are registered at decoding,
+    /// before any block is suggested.
+    /// </remarks>
     private sealed class RejectionRecorder(List<BlockRejection> rejections)
     {
         private readonly Dictionary<Hash256, List<int>> _indicesByHash = [];

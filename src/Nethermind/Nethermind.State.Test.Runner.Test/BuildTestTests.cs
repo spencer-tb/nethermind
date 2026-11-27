@@ -75,6 +75,37 @@ public class BuildTestTests
         }
     }
 
+    [Test]
+    public async Task Fails_on_a_mismatch_alone()
+    {
+        // A field the payload decoding ignores but the comparison reads: the payload still imports, so only the
+        // mismatch fails the fixture.
+        JsonNode fixtures = JsonNode.Parse(File.ReadAllText(Fixture(ValidFixture)))!;
+        fixtures.AsObject().Single().Value!["engineNewPayloads"]![0]!["params"]![0]!["unknownField"] = "0x01";
+        string path = Path.Combine(_directory, "mismatch_alone.json");
+        File.WriteAllText(path, fixtures.ToJsonString());
+
+        JsonElement result = await RunBuildTest(path);
+
+        JsonElement mismatch = result.GetProperty("mismatches").EnumerateArray().Single();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(result.GetProperty("pass").GetBoolean(), Is.False);
+            Assert.That(result.GetProperty("rejections").GetArrayLength(), Is.Zero);
+            Assert.That(mismatch.GetProperty("field").GetString(), Is.EqualTo("unknownField"));
+            Assert.That(mismatch.GetProperty("expected").GetString(), Is.EqualTo("0x01"));
+            Assert.That(mismatch.GetProperty("got").ValueKind, Is.EqualTo(JsonValueKind.Null));
+        }
+    }
+
+    [TestCase("--bal-sequential")]
+    [TestCase("--bal-report")]
+    public async Task Takes_none_of_the_bal_flags(string flag)
+    {
+        (string stdout, string stderr) = await NethtestProcess.Run(["buildtest", Fixture(ValidFixture), flag, "--neverTrace"]);
+        Assert.That(stderr, Does.Contain("do not apply to buildtest"), stdout);
+    }
+
     private static string Fixture(string name) => Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", name);
 
     private static async Task<JsonElement> RunBuildTest(string fixture)

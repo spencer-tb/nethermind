@@ -230,6 +230,13 @@ internal class Program
             return 1;
         }
 
+        // The client derives each access list itself while building, as the client test runner interface specifies.
+        if (isBuildTest && (parseResult.GetValue(Options.BalSequential) || parseResult.GetValue(Options.BalWithhold) || parseResult.GetValue(Options.BalReport)))
+        {
+            Console.Error.WriteLine("--bal-sequential, --bal-withhold and --bal-report do not apply to buildtest");
+            return 1;
+        }
+
         WhenTrace whenTrace = WhenTrace.WhenFailing;
         if (parseResult.GetValue(Options.TraceNever)) whenTrace = WhenTrace.Never;
         if (trace) whenTrace = WhenTrace.Always;
