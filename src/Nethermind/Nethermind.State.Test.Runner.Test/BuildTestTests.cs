@@ -102,8 +102,13 @@ public class BuildTestTests
     [TestCase("--bal-report")]
     public async Task Takes_none_of_the_bal_flags(string flag)
     {
-        (string stdout, string stderr) = await NethtestProcess.Run(["buildtest", Fixture(ValidFixture), flag, "--neverTrace"]);
-        Assert.That(stderr, Does.Contain("do not apply to buildtest"), stdout);
+        (string stdout, string stderr, int exitCode) = await NethtestProcess.RunWithExitCode(["buildtest", Fixture(ValidFixture), flag, "--neverTrace"]);
+        using (Assert.EnterMultipleScope())
+        {
+            // No fixture ran, so the run is incomplete.
+            Assert.That(exitCode, Is.EqualTo(2), stderr);
+            Assert.That(stderr, Does.Contain("do not apply to buildtest"), stdout);
+        }
     }
 
     private static string Fixture(string name) => Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", name);

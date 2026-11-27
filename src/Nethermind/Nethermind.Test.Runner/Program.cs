@@ -234,7 +234,7 @@ internal class Program
         if (isBuildTest && (parseResult.GetValue(Options.BalSequential) || parseResult.GetValue(Options.BalWithhold) || parseResult.GetValue(Options.BalReport)))
         {
             Console.Error.WriteLine("--bal-sequential, --bal-withhold and --bal-report do not apply to buildtest");
-            return 1;
+            return IncompleteInputExitCode;
         }
 
         WhenTrace whenTrace = WhenTrace.WhenFailing;
